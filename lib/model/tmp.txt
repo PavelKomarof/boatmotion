@@ -1,0 +1,680 @@
+
+
+
+
+
+
+
+
+
+
+
+// import 'dart:async';
+// import 'dart:typed_data';
+// import 'dart:ui' as ui;
+
+// import 'package:camera/camera.dart';
+// import 'package:flutter/material.dart';
+// import 'package:flutter/services.dart';
+
+// class CameraBrightnessWidget extends StatefulWidget {
+//   const CameraBrightnessWidget({super.key});
+
+//   @override
+//   State<CameraBrightnessWidget> createState() => _CameraBrightnessWidgetState();
+// }
+
+// class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
+//   CameraController? _controller;
+//   List<CameraDescription>? _cameras;
+//   double _brightness = 0.0;
+//   ui.Image? _currentImage;
+//   bool _isInitialized = false;
+
+//   @override
+//   void initState() {
+//     super.initState();
+//     _initializeCamera();
+//   }
+
+//   Future<void> _initializeCamera() async {
+//     try {
+//       WidgetsFlutterBinding.ensureInitialized();
+//       _cameras = await availableCameras();
+//       if (_cameras!.isEmpty) {
+//         throw Exception('No cameras found');
+//       }
+
+//       _controller = CameraController(
+//         _cameras!.first,
+//         ResolutionPreset.medium,
+//         enableAudio: false,
+//       );
+
+//       await _controller!.initialize();
+
+//       // Начинаем слушать поток кадров
+//       _controller!.startImageStream(_processCameraImage);
+
+//       setState(() {
+//         _isInitialized = true;
+//       });
+//     } catch (e) {
+//       print('Error initializing camera: $e');
+//     }
+//   }
+
+//   void _processCameraImage(CameraImage image) async {
+//     try {
+//       // Вычисляем среднюю яркость
+//       final brightness = await _calculateBrightness(image);
+      
+//       // Конвертируем CameraImage в ui.Image для отображения
+//       final uiImage = await _convertCameraImageToUiImage(image);
+
+//       if (mounted) {
+//         setState(() {
+//           _brightness = brightness;
+//           _currentImage = uiImage;
+//         });
+//       }
+//     } catch (e) {
+//       print('Error processing image: $e');
+//     }
+//   }
+
+//   Future<double> _calculateBrightness(CameraImage image) async {
+//     // Определяем центральную область (половина от центра)
+//     final width = image.width;
+//     final height = image.height;
+    
+//     final startX = (width * 0.25).round();
+//     final startY = (height * 0.25).round();
+//     final endX = (width * 0.75).round();
+//     final endY = (height * 0.75).round();
+
+//     double totalBrightness = 0;
+//     int pixelCount = 0;
+
+//     // Обрабатываем в зависимости от формата изображения
+//     if (image.format.group == ImageFormatGroup.yuv420) {
+//       // Для YUV420 используем Y-плоскость (яркость)
+//       final yPlane = image.planes[0];
+//       final yBytes = yPlane.bytes;
+//       final yRowStride = yPlane.bytesPerRow;
+      
+//       for (int y = startY; y < endY; y++) {
+//         for (int x = startX; x < endX; x++) {
+//           final yIndex = (y * yRowStride) + x;
+//           if (yIndex < yBytes.length) {
+//             final luminance = yBytes[yIndex] & 0xFF;
+//             totalBrightness += luminance / 255.0;
+//             pixelCount++;
+//           }
+//         }
+//       }
+//     } else if (image.format.group == ImageFormatGroup.bgra8888) {
+//       // Для BGRA8888 конвертируем в яркость
+//       final bytes = image.planes[0].bytes;
+//       final bytesPerPixel = 4;
+//       final rowStride = image.planes[0].bytesPerRow;
+      
+//       for (int y = startY; y < endY; y++) {
+//         for (int x = startX; x < endX; x++) {
+//           final pixelIndex = (y * rowStride) + (x * bytesPerPixel);
+//           if (pixelIndex + 2 < bytes.length) {
+//             final b = bytes[pixelIndex] & 0xFF;
+//             final g = bytes[pixelIndex + 1] & 0xFF;
+//             final r = bytes[pixelIndex + 2] & 0xFF;
+            
+//             // Формула для вычисления яркости
+//             final luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+//             totalBrightness += luminance;
+//             pixelCount++;
+//           }
+//         }
+//       }
+//     } else if (image.format.group == ImageFormatGroup.jpeg ||
+//                image.format.group == ImageFormatGroup.nv21) {
+//       // Для других форматов используем упрощенный подход
+//       // В реальном приложении нужно добавить соответствующую обработку
+//       totalBrightness = 0.5;
+//       pixelCount = 1;
+//     }
+
+//     return pixelCount > 0 ? totalBrightness / pixelCount : 0.0;
+//   }
+
+//   Future<ui.Image> _convertCameraImageToUiImage(CameraImage image) async {
+//     final Completer<ui.Image> completer = Completer();
+    
+//     try {
+//       if (image.format.group == ImageFormatGroup.bgra8888) {
+//         // Для BGRA8888
+//         final plane = image.planes[0];
+//         final bytes = Uint8List.fromList(plane.bytes);
+        
+//         ui.decodeImageFromList(bytes, (ui.Image img) {
+//           completer.complete(img);
+//         });
+//       } else if (image.format.group == ImageFormatGroup.yuv420) {
+//         // Для YUV420 конвертируем в RGB
+//         final rgbBytes = await _yuv420ToRgb(image);
+//         ui.decodeImageFromList(rgbBytes, (ui.Image img) {
+//           completer.complete(img);
+//         });
+//       } else {
+//         // Для других форматов создаем простое изображение
+//         final fallbackImage = await _createFallbackImage(image.width, image.height);
+//         completer.complete(fallbackImage);
+//       }
+//     } catch (e) {
+//       print('Error converting image: $e');
+//       final fallbackImage = await _createFallbackImage(image.width, image.height);
+//       completer.complete(fallbackImage);
+//     }
+    
+//     return completer.future;
+//   }
+
+//   Future<Uint8List> _yuv420ToRgb(CameraImage image) async {
+//     final yPlane = image.planes[0];
+//     final uPlane = image.planes[1];
+//     final vPlane = image.planes[2];
+    
+//     final width = image.width;
+//     final height = image.height;
+    
+//     final rgbBytes = Uint8List(width * height * 4);
+    
+//     for (int y = 0; y < height; y++) {
+//       for (int x = 0; x < width; x++) {
+//         final yIndex = y * yPlane.bytesPerRow + x;
+//         final uvIndex = (y ~/ 2) * uPlane.bytesPerRow + (x ~/ 2);
+        
+//         final yValue = yPlane.bytes[yIndex] & 0xFF;
+//         final uValue = uPlane.bytes[uvIndex] & 0xFF;
+//         final vValue = vPlane.bytes[uvIndex] & 0xFF;
+        
+//         // Конвертация YUV to RGB
+//         final r = (yValue + 1.402 * (vValue - 128)).clamp(0, 255).round();
+//         final g = (yValue - 0.344136 * (uValue - 128) - 0.714136 * (vValue - 128)).clamp(0, 255).round();
+//         final b = (yValue + 1.772 * (uValue - 128)).clamp(0, 255).round();
+        
+//         final pixelIndex = (y * width + x) * 4;
+//         rgbBytes[pixelIndex] = b; // B
+//         rgbBytes[pixelIndex + 1] = g; // G
+//         rgbBytes[pixelIndex + 2] = r; // R
+//         rgbBytes[pixelIndex + 3] = 255; // A
+//       }
+//     }
+    
+//     return rgbBytes;
+//   }
+
+//   Future<ui.Image> _createFallbackImage(int width, int height) async {
+//     final completer = Completer<ui.Image>();
+//     final recorder = ui.PictureRecorder();
+//     final canvas = Canvas(recorder);
+//     final paint = Paint()
+//       ..color = Colors.grey
+//       ..style = PaintingStyle.fill;
+    
+//     canvas.drawRect(Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()), paint);
+    
+//     final picture = recorder.endRecording();
+//     final image = await picture.toImage(width, height);
+//     completer.complete(image);
+    
+//     return completer.future;
+//   }
+
+//   @override
+//   void dispose() {
+//     _controller?.dispose();
+//     super.dispose();
+//   }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     if (!_isInitialized) {
+//       return const Center(
+//         child: Column(
+//           mainAxisAlignment: MainAxisAlignment.center,
+//           children: [
+//             CircularProgressIndicator(),
+//             SizedBox(height: 16),
+//             Text('Инициализация камеры...'),
+//           ],
+//         ),
+//       );
+//     }
+
+//     return Column(
+//       children: [
+//         Expanded(
+//           child: Stack(
+//             children: [
+//               // Превью камеры как запасной вариант
+//               CameraPreview(_controller!),
+              
+//               // Наше кастомное отображение с яркостью
+//               if (_currentImage != null)
+//                 CustomPaint(
+//                   painter: _CameraImagePainter(_currentImage!),
+//                   size: Size.infinite,
+//                 ),
+              
+//               // Отображение яркости
+//               Positioned(
+//                 top: 20,
+//                 right: 20,
+//                 child: Container(
+//                   padding: const EdgeInsets.all(12),
+//                   decoration: BoxDecoration(
+//                     color: Colors.black.withOpacity(0.7),
+//                     borderRadius: BorderRadius.circular(8),
+//                   ),
+//                   child: Text(
+//                     'Яркость: ${_brightness.toStringAsFixed(3)}',
+//                     style: const TextStyle(
+//                       color: Colors.white,
+//                       fontSize: 16,
+//                       fontWeight: FontWeight.bold,
+//                     ),
+//                   ),
+//                 ),
+//               ),
+              
+//               // Рамка для визуализации центральной области
+//               Positioned(
+//                 left: MediaQuery.of(context).size.width * 0.25,
+//                 top: MediaQuery.of(context).size.height * 0.25,
+//                 child: Container(
+//                   width: MediaQuery.of(context).size.width * 0.5,
+//                   height: MediaQuery.of(context).size.height * 0.5,
+//                   decoration: BoxDecoration(
+//                     border: Border.all(
+//                       color: Colors.red,
+//                       width: 2,
+//                     ),
+//                   ),
+//                 ),
+//               ),
+//             ],
+//           ),
+//         ),
+//         Padding(
+//           padding: const EdgeInsets.all(16.0),
+//           child: Text(
+//             'Средняя яркость центральной области: ${_brightness.toStringAsFixed(3)}',
+//             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+//             textAlign: TextAlign.center,
+//           ),
+//         ),
+//       ],
+//     );
+//   }
+// }
+
+// class _CameraImagePainter extends CustomPainter {
+//   final ui.Image image;
+
+//   _CameraImagePainter(this.image);
+
+//   @override
+//   void paint(Canvas canvas, Size size) {
+//     final paint = Paint();
+    
+//     // Рассчитываем размеры для отображения с сохранением пропорций
+//     final imageRatio = image.width / image.height;
+//     final screenRatio = size.width / size.height;
+    
+//     double renderWidth, renderHeight;
+    
+//     if (imageRatio > screenRatio) {
+//       renderWidth = size.width;
+//       renderHeight = size.width / imageRatio;
+//     } else {
+//       renderHeight = size.height;
+//       renderWidth = size.height * imageRatio;
+//     }
+    
+//     final offsetX = (size.width - renderWidth) / 2;
+//     final offsetY = (size.height - renderHeight) / 2;
+    
+//     final rect = Rect.fromLTWH(offsetX, offsetY, renderWidth, renderHeight);
+//     canvas.drawImageRect(image, 
+//         Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+//         rect, paint);
+//   }
+
+//   @override
+//   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import 'dart:async';
+// import 'dart:typed_data';
+// import 'dart:ui' as ui;
+
+// import 'package:camera/camera.dart';
+// import 'package:flutter/material.dart';
+// import 'package:flutter/services.dart';
+
+// class CameraBrightnessWidget extends StatefulWidget {
+//   const CameraBrightnessWidget({super.key});
+
+//   @override
+//   State<CameraBrightnessWidget> createState() => _CameraBrightnessWidgetState();
+// }
+
+// class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
+//   CameraController? _controller;
+//   List<CameraDescription>? _cameras;
+//   double _brightness = 0.0;
+//   ui.Image? _currentImage;
+//   bool _isInitialized = false;
+
+//   @override
+//   void initState() {
+//     super.initState();
+//     _initializeCamera();
+//   }
+
+//   Future<void> _initializeCamera() async {
+//     try {
+//       _cameras = await availableCameras();
+//       if (_cameras!.isEmpty) {
+//         throw Exception('No cameras found');
+//       }
+
+//       _controller = CameraController(
+//         _cameras!.first,
+//         ResolutionPreset.medium,
+//         enableAudio: false,
+//       );
+
+//       await _controller!.initialize();
+
+//       // Начинаем слушать поток кадров
+//       _controller!.startImageStream(_processCameraImage);
+
+//       setState(() {
+//         _isInitialized = true;
+//       });
+//     } catch (e) {
+//       print('Error initializing camera: $e');
+//     }
+//   }
+
+//   void _processCameraImage(CameraImage image) async {
+//     try {
+//       // Вычисляем среднюю яркость
+//       final brightness = await _calculateBrightness(image);
+      
+//       // Конвертируем CameraImage в ui.Image для отображения
+//       final uiImage = await _convertCameraImageToUiImage(image);
+
+//       if (mounted) {
+//         setState(() {
+//           _brightness = brightness;
+//           _currentImage = uiImage;
+//         });
+//       }
+//     } catch (e) {
+//       print('Error processing image: $e');
+//     }
+//   }
+
+//   Future<double> _calculateBrightness(CameraImage image) async {
+//     // Определяем центральную область (половина от центра)
+//     final width = image.width;
+//     final height = image.height;
+    
+//     final startX = (width * 0.25).round();
+//     final startY = (height * 0.25).round();
+//     final endX = (width * 0.75).round();
+//     final endY = (height * 0.75).round();
+
+//     double totalBrightness = 0;
+//     int pixelCount = 0;
+
+//     // Обрабатываем в зависимости от формата изображения
+//     if (image.format == ImageFormat.yuv420) {
+//       // Для YUV420 используем Y-плоскость (яркость)
+//       final yPlane = image.planes[0];
+//       final yBytes = yPlane.bytes;
+//       final yRowStride = yPlane.bytesPerRow;
+      
+//       for (int y = startY; y < endY; y++) {
+//         for (int x = startX; x < endX; x++) {
+//           final yIndex = (y * yRowStride) + x;
+//           if (yIndex < yBytes.length) {
+//             final luminance = yBytes[yIndex] & 0xFF;
+//             totalBrightness += luminance / 255.0;
+//             pixelCount++;
+//           }
+//         }
+//       }
+//     } else if (image.format == ImageFormat.bgra8888) {
+//       // Для BGRA8888 конвертируем в яркость
+//       final bytes = image.planes[0].bytes;
+//       final bytesPerPixel = 4;
+//       final rowStride = image.planes[0].bytesPerRow;
+      
+//       for (int y = startY; y < endY; y++) {
+//         for (int x = startX; x < endX; x++) {
+//           final pixelIndex = (y * rowStride) + (x * bytesPerPixel);
+//           if (pixelIndex + 2 < bytes.length) {
+//             final b = bytes[pixelIndex] & 0xFF;
+//             final g = bytes[pixelIndex + 1] & 0xFF;
+//             final r = bytes[pixelIndex + 2] & 0xFF;
+            
+//             // Формула для вычисления яркости
+//             final luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+//             totalBrightness += luminance;
+//             pixelCount++;
+//           }
+//         }
+//       }
+//     }
+
+//     return pixelCount > 0 ? totalBrightness / pixelCount : 0.0;
+//   }
+
+//   Future<ui.Image> _convertCameraImageToUiImage(CameraImage image) async {
+//     final Completer<ui.Image> completer = Completer();
+    
+//     try {
+//       if (image.format == ImageFormat.bgra8888) {
+//         // Для BGRA8888
+//         final plane = image.planes[0];
+//         final bytes = Uint8List.fromList(plane.bytes);
+        
+//         ui.decodeImageFromList(bytes, (ui.Image img) {
+//           completer.complete(img);
+//         });
+//       } else if (image.format == ImageFormat.yuv420) {
+//         // Для YUV420 конвертируем в RGB
+//         final rgbBytes = await _yuv420ToRgb(image);
+//         ui.decodeImageFromList(rgbBytes, (ui.Image img) {
+//           completer.complete(img);
+//         });
+//       } else {
+//         throw Exception('Unsupported image format');
+//       }
+//     } catch (e) {
+//       completer.completeError(e);
+//     }
+    
+//     return completer.future;
+//   }
+
+//   Future<Uint8List> _yuv420ToRgb(CameraImage image) async {
+//     // Простая конвертация YUV420 в RGB
+//     // В реальном приложении лучше использовать более оптимизированный метод
+//     final yPlane = image.planes[0];
+//     final uPlane = image.planes[1];
+//     final vPlane = image.planes[2];
+    
+//     final width = image.width;
+//     final height = image.height;
+    
+//     final rgbBytes = Uint8List(width * height * 4);
+    
+//     for (int y = 0; y < height; y++) {
+//       for (int x = 0; x < width; x++) {
+//         final yIndex = y * yPlane.bytesPerRow + x;
+//         final uvIndex = (y ~/ 2) * uPlane.bytesPerRow + (x ~/ 2);
+        
+//         final yValue = yPlane.bytes[yIndex] & 0xFF;
+//         final uValue = uPlane.bytes[uvIndex] & 0xFF;
+//         final vValue = vPlane.bytes[uvIndex] & 0xFF;
+        
+//         // Конвертация YUV to RGB
+//         final r = (yValue + 1.402 * (vValue - 128)).clamp(0, 255).round();
+//         final g = (yValue - 0.344136 * (uValue - 128) - 0.714136 * (vValue - 128)).clamp(0, 255).round();
+//         final b = (yValue + 1.772 * (uValue - 128)).clamp(0, 255).round();
+        
+//         final pixelIndex = (y * width + x) * 4;
+//         rgbBytes[pixelIndex] = b; // B
+//         rgbBytes[pixelIndex + 1] = g; // G
+//         rgbBytes[pixelIndex + 2] = r; // R
+//         rgbBytes[pixelIndex + 3] = 255; // A
+//       }
+//     }
+    
+//     return rgbBytes;
+//   }
+
+//   @override
+//   void dispose() {
+//     _controller?.dispose();
+//     super.dispose();
+//   }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     if (!_isInitialized) {
+//       return const Center(child: CircularProgressIndicator());
+//     }
+
+//     return Column(
+//       children: [
+//         Expanded(
+//           child: Stack(
+//             children: [
+//               if (_currentImage != null)
+//                 CustomPaint(
+//                   painter: _CameraImagePainter(_currentImage!),
+//                   size: Size.infinite,
+//                 ),
+//               Positioned(
+//                 top: 20,
+//                 right: 20,
+//                 child: Container(
+//                   padding: const EdgeInsets.all(12),
+//                   decoration: BoxDecoration(
+//                     color: Colors.black.withOpacity(0.7),
+//                     borderRadius: BorderRadius.circular(8),
+//                   ),
+//                   child: Text(
+//                     'Яркость: ${_brightness.toStringAsFixed(3)}',
+//                     style: const TextStyle(
+//                       color: Colors.white,
+//                       fontSize: 16,
+//                       fontWeight: FontWeight.bold,
+//                     ),
+//                   ),
+//                 ),
+//               ),
+//               // Рамка для визуализации центральной области
+//               Positioned(
+//                 left: MediaQuery.of(context).size.width * 0.25,
+//                 top: MediaQuery.of(context).size.height * 0.25,
+//                 child: Container(
+//                   width: MediaQuery.of(context).size.width * 0.5,
+//                   height: MediaQuery.of(context).size.height * 0.5,
+//                   decoration: BoxDecoration(
+//                     border: Border.all(
+//                       color: Colors.red,
+//                       width: 2,
+//                     ),
+//                   ),
+//                 ),
+//               ),
+//             ],
+//           ),
+//         ),
+//         Padding(
+//           padding: const EdgeInsets.all(16.0),
+//           child: Text(
+//             'Средняя яркость центральной области: ${_brightness.toStringAsFixed(3)}',
+//             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+//             textAlign: TextAlign.center,
+//           ),
+//         ),
+//       ],
+//     );
+//   }
+// }
+
+// class _CameraImagePainter extends CustomPainter {
+//   final ui.Image image;
+
+//   _CameraImagePainter(this.image);
+
+//   @override
+//   void paint(Canvas canvas, Size size) {
+//     final paint = Paint();
+    
+//     // Рассчитываем размеры для отображения с сохранением пропорций
+//     final imageRatio = image.width / image.height;
+//     final screenRatio = size.width / size.height;
+    
+//     double renderWidth, renderHeight;
+    
+//     if (imageRatio > screenRatio) {
+//       renderWidth = size.width;
+//       renderHeight = size.width / imageRatio;
+//     } else {
+//       renderHeight = size.height;
+//       renderWidth = size.height * imageRatio;
+//     }
+    
+//     final offsetX = (size.width - renderWidth) / 2;
+//     final offsetY = (size.height - renderHeight) / 2;
+    
+//     final rect = Rect.fromLTWH(offsetX, offsetY, renderWidth, renderHeight);
+//     canvas.drawImageRect(image, 
+//         Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+//         rect, paint);
+//   }
+
+//   @override
+//   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+// }
+
+
+
+
+
+

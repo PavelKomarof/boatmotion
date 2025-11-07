@@ -1,0 +1,353 @@
+
+
+
+import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:camera/camera.dart';
+import 'package:flutter/material.dart';
+
+class CameraBrightnessWidget extends StatefulWidget {
+  const CameraBrightnessWidget({super.key});
+
+  @override
+  State<CameraBrightnessWidget> createState() => _CameraBrightnessWidgetState();
+}
+
+class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
+  CameraController? _controller;
+  List<CameraDescription>? _cameras;
+  double _brightness = 0.0;
+  bool _isInitialized = false;
+  bool _isProcessing = false;
+  DateTime _lastProcessTime = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeCamera();
+  }
+
+  Future<void> _initializeCamera() async {
+    try {
+      WidgetsFlutterBinding.ensureInitialized();
+      _cameras = await availableCameras();
+      if (_cameras!.isEmpty) {
+        throw Exception('No cameras found');
+      }
+
+      _controller = CameraController(
+        _cameras!.first,
+        ResolutionPreset.low, // Уменьшаем разрешение для производительности
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420, // Явно указываем формат
+      );
+
+      await _controller!.initialize();
+
+      setState(() {
+        _isInitialized = true;
+      });
+
+      // Начинаем слушать поток кадров после инициализации UI
+      _controller!.startImageStream(_processCameraImage);
+
+    } catch (e) {
+      print('Error initializing camera: $e');
+      if (mounted) {
+        setState(() {
+          _isInitialized = false;
+        });
+      }
+    }
+  }
+
+  void _processCameraImage(CameraImage image) async {
+    // Ограничиваем частоту обработки (не чаще чем раз в 100ms)
+    final now = DateTime.now();
+    if (now.difference(_lastProcessTime).inMilliseconds < 100 || _isProcessing) {
+      return;
+    }
+
+    _isProcessing = true;
+    _lastProcessTime = now;
+
+    try {
+      // Вычисляем яркость без конвертации в ui.Image (это слишком тяжело)
+      final brightness = await _calculateBrightness(image);
+
+      if (mounted) {
+        setState(() {
+          _brightness = brightness;
+        });
+      }
+    } catch (e) {
+      print('Error processing image: $e');
+    } finally {
+      _isProcessing = false;
+    }
+  }
+
+  Future<double> _calculateBrightness(CameraImage image) async {
+    // Используем isolate для тяжелых вычислений
+    return await compute(_isolatedBrightnessCalculation, image);
+  }
+
+  static Future<double> _isolatedBrightnessCalculation(CameraImage image) async {
+    final width = image.width;
+    final height = image.height;
+    
+    final startX = (width * 0.25).round();
+    final startY = (height * 0.25).round();
+    final endX = (width * 0.75).round();
+    final endY = (height * 0.75).round();
+
+    double totalBrightness = 0;
+    int pixelCount = 0;
+
+    try {
+      if (image.format.group == ImageFormatGroup.yuv420) {
+        // Для YUV420 используем Y-плоскость (яркость)
+        final yPlane = image.planes[0];
+        final yBytes = yPlane.bytes;
+        final yRowStride = yPlane.bytesPerRow;
+        
+        // Увеличиваем шаг для производительности (каждый 3й пиксель)
+        for (int y = startY; y < endY; y += 2) {
+          for (int x = startX; x < endX; x += 2) {
+            final yIndex = (y * yRowStride) + x;
+            if (yIndex < yBytes.length) {
+              final luminance = yBytes[yIndex] & 0xFF;
+              totalBrightness += luminance / 255.0;
+              pixelCount++;
+            }
+          }
+        }
+      } else if (image.format.group == ImageFormatGroup.bgra8888) {
+        // Для BGRA8888 конвертируем в яркость
+        final bytes = image.planes[0].bytes;
+        final bytesPerPixel = 4;
+        final rowStride = image.planes[0].bytesPerRow;
+        
+        for (int y = startY; y < endY; y += 2) {
+          for (int x = startX; x < endX; x += 2) {
+            final pixelIndex = (y * rowStride) + (x * bytesPerPixel);
+            if (pixelIndex + 2 < bytes.length) {
+              final b = bytes[pixelIndex] & 0xFF;
+              final g = bytes[pixelIndex + 1] & 0xFF;
+              final r = bytes[pixelIndex + 2] & 0xFF;
+              
+              final luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+              totalBrightness += luminance;
+              pixelCount++;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('Error in brightness calculation: $e');
+    }
+
+    return pixelCount > 0 ? totalBrightness / pixelCount : 0.0;
+  }
+
+  // Упрощенная функция compute для изоляции
+  static Future<T> compute<T>(Function fun, dynamic param) async {
+    return await _compute(fun, param);
+  }
+
+  static Future<T> _compute<T>(Function fun, dynamic param) async {
+    final completer = Completer<T>();
+    // В реальном приложении используйте flutter's compute
+    try {
+      final result = await fun(param);
+      completer.complete(result);
+    } catch (e) {
+      completer.completeError(e);
+    }
+    return completer.future;
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  String _getBrightnessLevel(double brightness) {
+    if (brightness < 0.2) return 'Очень темно';
+    if (brightness < 0.4) return 'Темно';
+    if (brightness < 0.6) return 'Нормально';
+    if (brightness < 0.8) return 'Светло';
+    return 'Очень светло';
+  }
+
+  Color _getBrightnessColor(double brightness) {
+    if (brightness < 0.2) return Colors.red;
+    if (brightness < 0.4) return Colors.orange;
+    if (brightness < 0.6) return Colors.yellow;
+    if (brightness < 0.8) return Colors.green;
+    return Colors.blue;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_isInitialized) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Инициализация камеры...'),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(
+          child: Stack(
+            children: [
+              // Используем стандартный CameraPreview для лучшей производительности
+              CameraPreview(_controller!),
+              
+              // Отображение яркости
+              Positioned(
+                top: 20,
+                right: 20,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Яркость: ${_brightness.toStringAsFixed(3)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _getBrightnessLevel(_brightness),
+                        style: TextStyle(
+                          color: _getBrightnessColor(_brightness),
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              // Рамка для визуализации центральной области
+              Positioned(
+                left: MediaQuery.of(context).size.width * 0.25,
+                top: MediaQuery.of(context).size.height * 0.25,
+                child: Container(
+                  width: MediaQuery.of(context).size.width * 0.5,
+                  height: MediaQuery.of(context).size.height * 0.5,
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Colors.red.withOpacity(0.5),
+                      width: 2,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      'Область измерения',
+                      style: TextStyle(
+                        color: Colors.white,
+                        backgroundColor: Colors.black.withOpacity(0.5),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(16.0),
+          decoration: BoxDecoration(
+            color: _getBrightnessColor(_brightness).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              LinearProgressIndicator(
+                value: _brightness,
+                backgroundColor: Colors.grey[300],
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  _getBrightnessColor(_brightness),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${_getBrightnessLevel(_brightness)} • ${(_brightness * 100).toStringAsFixed(1)}%',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: _getBrightnessColor(_brightness),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+
+
+
+//  // Конвертируем изображение в grayscale
+//       final grayMat = _convertToGrayscale(image);
+
+//       // Детектируем маркеры
+//       final corners = <Mat>[];
+//       final ids = Mat.empty();
+//       final rejected = <Mat>[];
+
+//       try {
+//         // Использование детектора
+//         final (corners, ids, rejected) = detector.detectMarkers(grayMat);
+//         final centers = _calculateMarkerCenters(corners);
+        
+//       } finally {
+//         // Важно освободить все ресурсы
+//         detector.dispose();
+//         fastParameters.dispose();
+//         dictionary.dispose(); // если требуется
+//       }
+
+//       // Освобождаем ресурсы
+//       grayMat.release();
+//       // arucoDetector.release();
+//       for (final corner in corners) {
+//         corner.release();
+//       }
+//       for (final reject in rejected) {
+//         reject.release();
+//       }
+//       ids.release();
+//     } catch (e) {
+//       print('Error in ArUco detection: $e');
+//     }
+
+//     return centers;
+
+
+
+
