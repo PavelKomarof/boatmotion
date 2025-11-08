@@ -19,6 +19,18 @@ class CameraBrightnessWidget extends StatefulWidget {
 
 class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
   CameraController? _controller;
+  // Добавляем переменные для преобразования координат
+  double _scaleX = 1.0;
+  double _scaleY = 1.0;
+  double _offsetX = 0.0;
+  double _offsetY = 0.0;
+  double _correctionX = 0.0; // Добавляем коррекцию
+  Size? _frameSize;
+  Size? _screenSize;
+  final GlobalKey _previewKey = GlobalKey();
+  Offset? _previewCenter;
+  Size? _actualPreviewSize;
+
   List<CameraDescription>? _cameras;
   double _brightness = 0.0;
   bool _isInitialized = false;
@@ -38,6 +50,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
     _arucoService = ArucoDetectorService();
     _initializeCamera();
     _startAccelerometer();
+    // _calculatePreviewCenter();
   }
 
   @override
@@ -74,11 +87,18 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
       // Разрешаем автоматическую ориентацию
       // await _controller!.lockCaptureOrientation(DeviceOrientation.landscapeRight);
 
+      // Получаем размеры preview ДО начала потока
+      final previewSize = _controller!.value.previewSize;
+      print(
+        'Preview размер после инициализации: ${previewSize!.width} x ${previewSize.height}',
+      );
+
       setState(() {
         _isInitialized = true;
       });
 
       _controller!.startImageStream(_processCameraImage);
+      // _controller.
     } catch (e) {
       print('Error initializing camera: $e');
       if (mounted) {
@@ -116,6 +136,26 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
       }
     });
   }
+
+  // void _calculatePreviewCenter() {
+  //   WidgetsBinding.instance.addPostFrameCallback((_) {
+  //     final renderBox =
+  //         _previewKey.currentContext?.findRenderObject() as RenderBox?;
+  //     if (renderBox != null) {
+  //       final previewSize = renderBox.size;
+  //       final previewPosition = renderBox.localToGlobal(Offset.zero);
+
+  //       _previewCenter = Offset(
+  //         previewPosition.dx + previewSize.width / 2,
+  //         previewPosition.dy + previewSize.height / 2,
+  //       );
+
+  //       print('Центр preview: $_previewCenter');
+  //       print('Размер preview: $previewSize');
+  //       print('Позиция preview: $previewPosition');
+  //     }
+  //   });
+  // }
 
   double _calculateRollAngle(double x, double y, double z) {
     // Расчет угла крена (наклон влево/вправо)
@@ -191,6 +231,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
 
   void _processCameraImage(CameraImage image) async {
     final now = DateTime.now();
+    // image
     if (now.difference(_lastProcessTime).inMilliseconds < 100 ||
         _isProcessing) {
       return;
@@ -202,9 +243,10 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
     try {
       final brightness = await _calculateBrightness(image);
       // final centers = await compute(_processArucoInIsolate, image);
-          final centersData = await compute(_processArucoInIsolate, image);    
-    // Конвертируем обратно в Point2f
-    final centers = centersData.map((data) => dartcv.Point2f(data[0], data[1])).toList();
+      final centersData = await compute(_processArucoInIsolate, image);
+      // Конвертируем обратно в Point2f
+      final centers =
+          centersData.map((data) => dartcv.Point2f(data[0], data[1])).toList();
 
       if (mounted) {
         setState(() {
@@ -226,13 +268,10 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
   static List<List<double>> _processArucoInIsolate(CameraImage image) {
     final service = ArucoDetectorService();
     try {
-
       // return service.processFrame(image);
-    final centers = service.processFrame(image);
-    // Конвертируем Point2f в List<double>
-    return centers.map((point) => [point.x, point.y]).toList();
-
-
+      final centers = service.processFrame(image);
+      // Конвертируем Point2f в List<double>
+      return centers.map((point) => [point.x, point.y]).toList();
     } finally {
       service.dispose();
     }
@@ -316,61 +355,186 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
 
     final previewSize = _controller!.value.previewSize!;
 
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      color: Colors.black,
-      child: Stack(
-        children: [
-          // Основное изображение камеры
-          // Center(
-          //   child: AspectRatio(
-          //     // aspectRatio: _controller!.value.previewSize!.height / _controller!.value.previewSize!.width,
-          //     aspectRatio: _controller!.value.previewSize!.width / _controller!.value.previewSize!.height,
-          //     child: CameraPreview(_controller!),
-          //   ),
-          // ),
-          // Плюсы: Сохраняет все изображение без искажений
-          // Минусы: Черные поля по бокам
-          // FittedBox(fit: BoxFit.contain, child: CameraPreview(_controller!)),
-          AspectRatio(
-            aspectRatio: previewSize.width / previewSize.height,
-            child: FittedBox(
-              fit: BoxFit.contain, // или BoxFit.contain   BoxFit.cover
-              child: SizedBox(
-                width: previewSize.width.toDouble(),
-                height: previewSize.height.toDouble(),
-                child: CameraPreview(_controller!),
+    // return Container(
+    //   width: double.infinity,
+    //   height: double.infinity,
+    //   color: Colors.black,
+    //   child: Stack(
+    //     children: [
+    //       // Основное изображение камеры
+    //       // Center(
+    //       //   child: AspectRatio(
+    //       //     // aspectRatio: _controller!.value.previewSize!.height / _controller!.value.previewSize!.width,
+    //       //     aspectRatio: _controller!.value.previewSize!.width / _controller!.value.previewSize!.height,
+    //       //     child: CameraPreview(_controller!),
+    //       //   ),
+    //       // ),
+    //       // Плюсы: Сохраняет все изображение без искажений
+    //       // Минусы: Черные поля по бокам
+    //       // FittedBox(fit: BoxFit.contain, child: CameraPreview(_controller!)),
+    //       AspectRatio(
+    //         aspectRatio: previewSize.width / previewSize.height,
+    //         child: FittedBox(
+    //           fit: BoxFit.contain, // или BoxFit.contain   BoxFit.cover
+    //           child: SizedBox(
+    //             width: previewSize.width.toDouble(),
+    //             height: previewSize.height.toDouble(),
+    //             child: CameraPreview(_controller!),
+    //           ),
+    //         ),
+    //       ),
+    //       _buildMarkerOverlay(),
+    //       // Индикатор горизонта
+    //       Positioned(
+    //         top: 20,
+    //         left: 0,
+    //         right: 0,
+    //         child: _buildHorizonIndicator(),
+    //       ),
+
+    //       // Уровень с индикацией угла
+    //       Positioned(
+    //         bottom: 20,
+    //         left: 0,
+    //         right: 0,
+    //         child: _buildLevelIndicator(),
+    //       ),
+    //     ],
+    //   ),
+    // );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Сохраняем размер экрана
+        _screenSize = Size(constraints.maxWidth, constraints.maxHeight);
+        // _calculatePreviewCenter();
+        // Рассчитываем масштаб и смещение для преобразования координат
+        _calculateTransformation(previewSize, _screenSize!);
+
+        // Рассчитываем фактический размер preview после FittedBox
+        _actualPreviewSize = _calculateActualPreviewSize(previewSize, _screenSize!);
+        _previewCenter = Offset(
+          _screenSize!.width / 2,
+          _screenSize!.height / 2,
+        );
+
+        print('Фактический размер preview: $_actualPreviewSize');
+        print('Центр preview: $_previewCenter');
+
+
+        return Container(
+          width: double.infinity,
+          height: double.infinity,
+          color: Colors.black,
+          child: Stack(
+            children: [
+              AspectRatio(
+                aspectRatio: previewSize.width / previewSize.height,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: SizedBox(
+                    width: previewSize.width.toDouble(),
+                    height: previewSize.height.toDouble(),
+                    child: CameraPreview(_controller!),
+                  ),
+                ),
               ),
-            ),
+              _buildMarkerOverlay(),
+              _buildHorizonIndicator(),
+              _buildLevelIndicator(),
+            ],
           ),
-          _buildMarkerOverlay(),
-          // Индикатор горизонта
-          Positioned(
-            top: 20,
-            left: 0,
-            right: 0,
-            child: _buildHorizonIndicator(),
-          ),
-
-          // Уровень с индикацией угла
-          Positioned(
-            bottom: 20,
-            left: 0,
-            right: 0,
-            child: _buildLevelIndicator(),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildMarkerOverlay() {
-    return CustomPaint(
-      painter: MarkerPainter(_detectedCenters),
-      child: Container(),
+  Size _calculateActualPreviewSize(Size frameSize, Size containerSize) {
+    final frameRatio = frameSize.width / frameSize.height;
+    final containerRatio = containerSize.width / containerSize.height;
+
+    if (frameRatio > containerRatio) {
+      // Preview шире контейнера - ограничение по ширине
+      final width = containerSize.width;
+      final height = width / frameRatio;
+      return Size(width, height);
+    } else {
+      // Preview уже контейнера - ограничение по высоте
+      final height = containerSize.height;
+      final width = height * frameRatio;
+      return Size(width, height);
+    }
+  }
+
+  void _calculateTransformation(Size frameSize, Size screenSize) {
+    _frameSize = frameSize;
+
+    final frameRatio = frameSize.width / frameSize.height;
+    final screenRatio = screenSize.width / screenSize.height;
+
+    if (frameRatio > screenRatio) {
+      // Preview шире экрана - черные поля сверху и снизу
+      _scaleX = screenSize.width / frameSize.width;
+      _scaleY = _scaleX;
+      _offsetX = 0;
+      _offsetY = (screenSize.height - (frameSize.height * _scaleY)) / 2;
+
+      // Для этого случая коррекция не нужна
+      _correctionX = 0;
+    } else {
+      // Preview уже экрана - черные поля по бокам
+      _scaleY = screenSize.height / frameSize.height;
+      _scaleX = _scaleY;
+      _offsetX = (screenSize.width - (frameSize.width * _scaleX)) / 2;
+      _offsetY = 0;
+
+      // Эмпирическая коррекция для смещения вправо
+      _offsetX = (_previewCenter?.dx ?? 0) - 640.0 / 2.0;
+      _correctionX = _offsetX; // или другое значение
+    }
+
+    print('Масштаб: X=$_scaleX, Y=$_scaleY');
+    print('Смещение: X=$_offsetX, Y=$_offsetY');
+  }
+
+  // Преобразование координат из системы кадра в систему экрана
+  dartcv.Point2f _transformCoordinates(dartcv.Point2f framePoint) {
+    return dartcv.Point2f(
+      framePoint.x * _scaleX + _offsetX,
+      framePoint.y * _scaleY + _offsetY,
     );
   }
+
+  // void _calculateTransformation(Size frameSize, Size screenSize) {
+  //   _frameSize = frameSize;
+
+  //   final frameRatio = frameSize.width / frameSize.height;
+  //   final screenRatio = screenSize.width / screenSize.height;
+
+  //   if (frameRatio > screenRatio) {
+  //     // Preview шире экрана - черные поля сверху и снизу
+  //     _scaleX = screenSize.width / frameSize.width;
+  //     _scaleY = _scaleX;
+  //     _offsetX = 0;
+  //     _offsetY = (screenSize.height - (frameSize.height * _scaleY)) / 2;
+
+  //     // Для этого случая коррекция не нужна
+  //     _correctionX = 0;
+  //   } else {
+  //     // Preview уже экрана - черные поля по бокам
+  //     _scaleY = screenSize.height / frameSize.height;
+  //     _scaleX = _scaleY;
+  //     _offsetX = (screenSize.width - (frameSize.width * _scaleX)) / 2;
+  //     _offsetY = 0;
+
+  //     // Эмпирическая коррекция для смещения вправо
+  //     _correctionX = _offsetX; // или другое значение
+  //   }
+
+  //   print('Масштаб: X=$_scaleX, Y=$_scaleY');
+  //   print('Смещение: X=$_offsetX, Y=$_offsetY');
+  //   print('Коррекция X: $_correctionX');
+  // }
 
   Widget _buildHorizonIndicator() {
     return Container(
@@ -530,7 +694,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
               child: Stack(
                 children: [
                   _buildCameraPreview(),
-            
+
                   Positioned(
                     left: MediaQuery.of(context).size.width * 0.25,
                     top: MediaQuery.of(context).size.height * 0.25,
@@ -714,23 +878,59 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
       ),
     );
   }
+
+  Widget _buildMarkerOverlay() {
+    return CustomPaint(
+      // painter: MarkerPainter(_detectedCenters),
+      painter: MarkerPainter(_detectedCenters, _transformCoordinates),
+      child: Container(),
+    );
+  }
 }
 
-class MarkerPainter extends CustomPainter {
-  final List<dartcv.Point2f> centers;
+// class MarkerPainter extends CustomPainter {
+//   final List<dartcv.Point2f> centers;
 
-  MarkerPainter(this.centers);
+//   MarkerPainter(this.centers);
+
+//   @override
+//   void paint(Canvas canvas, Size size) {
+//     final paint =
+//         Paint()
+//           ..color = const ui.Color.fromARGB(255, 216, 244, 54)
+//           ..strokeWidth = 3
+//           ..style = PaintingStyle.fill;
+
+//     for (final center in centers) {
+//       canvas.drawCircle(Offset(center.x, center.y), 8, paint);
+//     }
+//   }
+
+//   @override
+//   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+// }
+class MarkerPainter extends CustomPainter {
+  final List<dartcv.Point2f> detectedCenters;
+  final dartcv.Point2f Function(dartcv.Point2f) transformCoordinates;
+
+  MarkerPainter(this.detectedCenters, this.transformCoordinates);
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint =
         Paint()
           ..color = Colors.red
-          ..strokeWidth = 3
           ..style = PaintingStyle.fill;
 
-    for (final center in centers) {
-      canvas.drawCircle(Offset(center.x, center.y), 8, paint);
+    for (final center in detectedCenters) {
+      // Преобразуем координаты из системы кадра в систему экрана
+      final screenCenter = transformCoordinates(center);
+
+      canvas.drawCircle(
+        Offset(screenCenter.x, screenCenter.y),
+        8.0, // радиус кружочка
+        paint,
+      );
     }
   }
 
