@@ -346,7 +346,10 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
             children: [
               CircularProgressIndicator(),
               SizedBox(height: 16),
-              Text('Загрузка камеры...', style: TextStyle(color: Colors.white)),
+              Text(
+                'Загрузка камеры... buildCameraPreview',
+                style: TextStyle(color: Colors.white),
+              ),
             ],
           ),
         ),
@@ -412,7 +415,10 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
         _calculateTransformation(previewSize, _screenSize!);
 
         // Рассчитываем фактический размер preview после FittedBox
-        _actualPreviewSize = _calculateActualPreviewSize(previewSize, _screenSize!);
+        _actualPreviewSize = _calculateActualPreviewSize(
+          previewSize,
+          _screenSize!,
+        );
         _previewCenter = Offset(
           _screenSize!.width / 2,
           _screenSize!.height / 2,
@@ -420,7 +426,6 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
 
         print('Фактический размер preview: $_actualPreviewSize');
         print('Центр preview: $_previewCenter');
-
 
         return Container(
           width: double.infinity,
@@ -440,8 +445,8 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
                 ),
               ),
               _buildMarkerOverlay(),
-              _buildHorizonIndicator(),
-              _buildLevelIndicator(),
+              // _buildHorizonIndicator(),
+              // _buildLevelIndicator(),
             ],
           ),
         );
@@ -489,7 +494,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
       _offsetY = 0;
 
       // Эмпирическая коррекция для смещения вправо
-      _offsetX = (_previewCenter?.dx ?? 0) - 640.0 / 2.0;
+      _offsetX = (_previewCenter?.dx ?? 0) - 640.0 / 2.0 -36;
       _correctionX = _offsetX; // или другое значение
     }
 
@@ -578,15 +583,17 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
   }
 
   Widget _buildLevelIndicator() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 40),
-      padding: const EdgeInsets.all(12),
+    return 
+    Container(
+      // margin: const EdgeInsets.symmetric(horizontal: 40),
+      // padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.7),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: 
+      Row(
+        // mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           Column(
             children: [
@@ -608,26 +615,26 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
               ),
             ],
           ),
-          Column(
-            children: [
-              Text(
-                'ТАНГАЖ',
-                style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
-              ),
-              Text(
-                '${_tiltAngle.abs().toStringAsFixed(1)}°',
-                style: TextStyle(
-                  color: _getPitchColor(),
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                _getPitchDirection(_tiltAngle),
-                style: TextStyle(color: _getPitchColor(), fontSize: 12),
-              ),
-            ],
-          ),
+          // Column(
+          //   children: [
+          //     Text(
+          //       'ТАНГАЖ',
+          //       style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+          //     ),
+          //     Text(
+          //       '${_tiltAngle.abs().toStringAsFixed(1)}°',
+          //       style: TextStyle(
+          //         color: _getPitchColor(),
+          //         fontSize: 18,
+          //         fontWeight: FontWeight.bold,
+          //       ),
+          //     ),
+          //     Text(
+          //       _getPitchDirection(_tiltAngle),
+          //       style: TextStyle(color: _getPitchColor(), fontSize: 12),
+          //     ),
+          //   ],
+          // ),
         ],
       ),
     );
@@ -649,7 +656,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
 
   String _getTiltDirection(double angle) {
     if (angle.abs() < 0.5) return 'ГОРИЗОНТ';
-    return angle > 0 ? 'ВПРАВО' : 'ВЛЕВО';
+    return angle > 0 ? '_ВПРАВО_' : '_ВЛЕВО__';
   }
 
   String _getPitchDirection(double angle) {
@@ -696,11 +703,11 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
                   _buildCameraPreview(),
 
                   Positioned(
-                    left: MediaQuery.of(context).size.width * 0.25,
-                    top: MediaQuery.of(context).size.height * 0.25,
+                    left: MediaQuery.of(context).size.width * 0.0, //0.25,
+                    top: MediaQuery.of(context).size.height * 0.0, //0.25,
                     child: Container(
-                      width: MediaQuery.of(context).size.width * 0.5,
-                      height: MediaQuery.of(context).size.height * 0.5,
+                      width: MediaQuery.of(context).size.width * 1.0, //0.5,
+                      height: MediaQuery.of(context).size.height * 1.0, //0.5,
                       decoration: BoxDecoration(
                         border: Border.all(
                           color: Colors.red.withOpacity(0.7),
@@ -715,143 +722,147 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
           ],
         ),
 
-        Container(
-          width: 200,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.2),
-            border: Border(left: BorderSide(color: Colors.grey.shade800)),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Индикация ориентации
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade900.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.blue.shade700),
-                ),
-                child: Column(
-                  children: [
-                    Icon(Icons.straighten, color: _getTiltColor(), size: 32),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Горизонт',
-                      style: TextStyle(
-                        color: Colors.grey.shade300,
-                        fontSize: 14,
-                      ),
-                    ),
-                    Text(
-                      '${_rollAngle.abs().toStringAsFixed(1)}°',
-                      style: TextStyle(
-                        color: _getTiltColor(),
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: Container(
+            width: 150,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.2),
+              border: Border(left: BorderSide(color: Colors.grey.shade800)),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Индикация ориентации
+                // Container(
+                //   padding: const EdgeInsets.all(12),
+                //   decoration: BoxDecoration(
+                //     color: Colors.blue.shade900.withOpacity(0.3),
+                //     borderRadius: BorderRadius.circular(10),
+                //     border: Border.all(color: Colors.blue.shade700),
+                //   ),
+                //   child: Column(
+                //     children: [
+                //       Icon(Icons.straighten, color: _getTiltColor(), size: 32),
+                //       const SizedBox(height: 8),
+                //       Text(
+                //         'Горизонт',
+                //         style: TextStyle(
+                //           color: Colors.grey.shade300,
+                //           fontSize: 14,
+                //         ),
+                //       ),
+                //       Text(
+                //         '${_rollAngle.abs().toStringAsFixed(1)}°',
+                //         style: TextStyle(
+                //           color: _getTiltColor(),
+                //           fontSize: 18,
+                //           fontWeight: FontWeight.bold,
+                //         ),
+                //       ),
+                //     ],
+                //   ),
+                // ),
 
-              const SizedBox(height: 16),
+                // const SizedBox(height: 16),
 
-              // Яркость
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: _getBrightnessColor(_brightness).withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _getBrightnessColor(_brightness),
-                    width: 2,
+                // Яркость
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: _getBrightnessColor(_brightness).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _getBrightnessColor(_brightness),
+                      width: 2,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        '${(_brightness * 100).toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: _getBrightnessColor(_brightness),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _getBrightnessLevel(_brightness),
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: _getBrightnessColor(_brightness),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                child: Column(
-                  children: [
-                    Text(
-                      '${(_brightness * 100).toStringAsFixed(1)}%',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: _getBrightnessColor(_brightness),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _getBrightnessLevel(_brightness),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: _getBrightnessColor(_brightness),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
 
-              const SizedBox(height: 20),
+                const SizedBox(height: 20),
+                _buildLevelIndicator(),
 
-              // Progress bar яркости
-              Column(
-                children: [
-                  Text(
-                    'Яркость',
-                    style: TextStyle(color: Colors.grey.shade300, fontSize: 14),
-                  ),
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(
-                    value: _brightness,
-                    backgroundColor: Colors.grey.shade800,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      _getBrightnessColor(_brightness),
-                    ),
-                    minHeight: 8,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ],
-              ),
+                // Progress bar яркости
+                // Column(
+                //   children: [
+                //     Text(
+                //       'Яркость',
+                //       style: TextStyle(color: Colors.grey.shade300, fontSize: 14),
+                //     ),
+                //     const SizedBox(height: 8),
+                //     LinearProgressIndicator(
+                //       value: _brightness,
+                //       backgroundColor: Colors.grey.shade800,
+                //       valueColor: AlwaysStoppedAnimation<Color>(
+                //         _getBrightnessColor(_brightness),
+                //       ),
+                //       minHeight: 8,
+                //       borderRadius: BorderRadius.circular(4),
+                //     ),
+                //   ],
+                // ),
 
-              const SizedBox(height: 20),
+                // const SizedBox(height: 20),
 
-              // Кнопка калибровки
-              ElevatedButton.icon(
-                onPressed: _isCalibrating ? null : _calibrateHorizon,
-                icon:
-                    _isCalibrating
-                        ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                        : const Icon(Icons.calendar_today, size: 16),
-                label: Text(
-                  _isCalibrating ? 'Калибровка...' : 'Калибровать горизонт',
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue.shade800,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 40),
-                ),
-              ),
+                // Кнопка калибровки
+                // ElevatedButton.icon(
+                //   onPressed: _isCalibrating ? null : _calibrateHorizon,
+                //   icon:
+                //       _isCalibrating
+                //           ? const SizedBox(
+                //             width: 16,
+                //             height: 16,
+                //             child: CircularProgressIndicator(strokeWidth: 2),
+                //           )
+                //           : const Icon(Icons.calendar_today, size: 16),
+                //   label: Text(
+                //     _isCalibrating ? 'Калибровка...' : 'Калибровать горизонт',
+                //   ),
+                //   style: ElevatedButton.styleFrom(
+                //     backgroundColor: Colors.blue.shade800,
+                //     foregroundColor: Colors.white,
+                //     minimumSize: const Size(double.infinity, 40),
+                //   ),
+                // ),
 
-              const SizedBox(height: 10),
+                // const SizedBox(height: 10),
 
-              // Сброс калибровки
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _calibrationOffset = 0.0;
-                  });
-                },
-                child: const Text(
-                  'Сбросить калибровку',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ),
-            ],
+                // Сброс калибровки
+                // TextButton(
+                //   onPressed: () {
+                //     setState(() {
+                //       _calibrationOffset = 0.0;
+                //     });
+                //   },
+                //   child: const Text(
+                //     'Сбросить калибровку',
+                //     style: TextStyle(color: Colors.grey),
+                //   ),
+                // ),
+              ],
+            ),
           ),
         ),
       ],
@@ -870,7 +881,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
             ),
             SizedBox(height: 20),
             Text(
-              'Инициализация камеры...',
+              'Инициализация камеры...buildLoadingScreen',
               style: TextStyle(color: Colors.white, fontSize: 18),
             ),
           ],
