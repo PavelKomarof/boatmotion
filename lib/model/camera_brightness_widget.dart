@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:boatmotion/model/aruco_detector.dart';
+import 'package:boatmotion/model/laser.dart';
 import 'package:flutter/foundation.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -243,6 +244,22 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
     try {
       final brightness = await _calculateBrightness(image);
       // final centers = await compute(_processArucoInIsolate, image);
+
+
+
+
+
+
+
+      final centersLaserData = await compute(_processLaserInIsolate, image);
+
+
+
+
+
+
+
+
       final centersData = await compute(_processArucoInIsolate, image);
       // Конвертируем обратно в Point2f
       final centers =
@@ -276,6 +293,22 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
       service.dispose();
     }
   }
+
+  // Для использования в isolate
+  static List<List<double>> _processLaserInIsolate(CameraImage image) {
+    final service = LaserDetectorService();
+    try {
+      // return service.processFrame(image);
+      final centers = service.processLaserFrame(image);
+      // Конвертируем Point2f в List<double>
+      return centers.map((point) => [point.x, point.y]).toList();
+    } finally {
+      service.dispose();
+    }
+  }
+
+
+
 
   Future<double> _calculateBrightness(CameraImage image) async {
     return await compute(_isolatedBrightnessCalculation, image);
@@ -424,8 +457,8 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
           _screenSize!.height / 2,
         );
 
-        print('Фактический размер preview: $_actualPreviewSize');
-        print('Центр preview: $_previewCenter');
+        // print('Фактический размер preview: $_actualPreviewSize');
+        // print('Центр preview: $_previewCenter');
 
         return Container(
           width: double.infinity,
@@ -498,8 +531,8 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
       _correctionX = _offsetX; // или другое значение
     }
 
-    print('Масштаб: X=$_scaleX, Y=$_scaleY');
-    print('Смещение: X=$_offsetX, Y=$_offsetY');
+    // print('Масштаб: X=$_scaleX, Y=$_scaleY');
+    // print('Смещение: X=$_offsetX, Y=$_offsetY');
   }
 
   // Преобразование координат из системы кадра в систему экрана
@@ -931,7 +964,8 @@ class MarkerPainter extends CustomPainter {
     final paint =
         Paint()
           ..color = Colors.red
-          ..style = PaintingStyle.fill;
+          // ..style = PaintingStyle.fill;
+          ..style = PaintingStyle.stroke;
 
     for (final center in detectedCenters) {
       // Преобразуем координаты из системы кадра в систему экрана
@@ -943,6 +977,11 @@ class MarkerPainter extends CustomPainter {
         paint,
       );
     }
+          canvas.drawCircle(
+        Offset(320, 210),
+        8.0, // радиус кружочка
+        paint,
+      );
   }
 
   @override

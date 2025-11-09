@@ -24,6 +24,7 @@ class ArucoCenterDetector {
     final centers = <Offset>[];
 
     try {
+
       // Шаг 1: Создание словаря. Используем один из предопределённых словарей.
       // Создаём объект словаря, например, для маркеров 6x6 с 250 вариантами.
       // Предполагается, что у вас есть доступ к функции для получения предопределённого словаря.
@@ -484,6 +485,11 @@ class ArucoDetectorService {
     final centers = <Point2f>[];
 
     try {
+
+
+      print('CameraImage image______________: ${image.planes[0].bytes[100]}');
+
+
       // Детектируем маркеры
       final (corners, ids, rejected) = _detector.detectMarkers(grayMat);
 
