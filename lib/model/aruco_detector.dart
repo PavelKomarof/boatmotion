@@ -541,3 +541,6 @@ class ArucoDetectorService {
     _parameters.dispose(); //.release();
   }
 }
+
+
+

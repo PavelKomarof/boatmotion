@@ -7,6 +7,9 @@ import 'dart:typed_data';
 // 222222222222222222222222222222222222222222222222222222222222222
 // 222222222222222222222222222222222222222222222222222222222222222
 
+int globalLowYLimit = 180;
+
+
 // Класс для передачи всех данных
 class LaserProcessingData {
   final CameraImage image;
@@ -14,6 +17,8 @@ class LaserProcessingData {
   final int maxXLaserZone;
   final int minYLaserZone;
   final int maxYLaserZone;
+  final int lowYLimit;
+  
 
   LaserProcessingData({
     required this.image,
@@ -21,6 +26,7 @@ class LaserProcessingData {
     required this.maxXLaserZone,
     required this.minYLaserZone,
     required this.maxYLaserZone,
+    required this.lowYLimit,
   });
 }
 
@@ -56,11 +62,11 @@ class LaserDetectorService {
     final maxXLaserZone = data.maxXLaserZone;
     final minYLaserZone = data.minYLaserZone;
     final maxYLaserZone = data.maxYLaserZone;
-    int lowYLimit = 180;
+    int lowYLimit = data.lowYLimit;//globalLowYLimit;  //180;
 
     List<cv.Point2f> laserCenters = [];
 
-    printPixelYUV(image, 320, 210);
+    // printPixelYUV(image, 320, 210);
 
     // Проверяем формат изображения
     if (image.format.group != ImageFormatGroup.yuv420) {
@@ -106,14 +112,35 @@ class LaserDetectorService {
       // }
 
       // 3. Создаем пустую матрицу и заполняем данными
+      // final maskMat = cv.Mat.zeros(height, width, cv.MatType.CV_8UC1);
+      // for (int y = 0; y < height; y++) {
+      //   for (int x = 0; x < width; x++) {
+      //     final value = mask[y * width + x];
+      //     maskMat.set<int>(y, x, value);
+      //   }
+      // }
+
+      // БЫСТРЫЙ СПОСОБ: Создаем Mat и заполняем через data pointer
       final maskMat = cv.Mat.zeros(height, width, cv.MatType.CV_8UC1);
-      for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-          final value = mask[y * width + x];
-          maskMat.set<int>(y, x, value);
+      final maskData = maskMat.data;
+
+      if (maskData != null) {
+        final byteData = maskData.buffer.asUint8List();
+
+        // Быстрое заполнение через прямой доступ к памяти
+        for (int y = minYLaserZone; y < maxYLaserZone; y++) {
+          for (int x = minXLaserZone; x < maxXLaserZone; x++) {
+            final yIndex = (y * yRowStride) + x;
+            if (yIndex < yBytes.length) {
+              final yValue = yBytes[yIndex] & 0xFF;
+              final maskIndex = y * width + x;
+              byteData[maskIndex] = (yValue > lowYLimit) ? 255 : 0;
+            }
+          }
         }
       }
 
+      // return laserCenters;
       // 4. Создаем выходные матрицы
       cv.Mat? labels;
       cv.Mat? stats;
@@ -217,7 +244,7 @@ class LaserDetectorService {
       centroids.release();
       if (laserCenters.length > 0) {
         print(
-          '=================================================================================Найдено лазерных центров: ${laserCenters.length}   (${laserCenters[0].x.toStringAsFixed(1)}, ${laserCenters[0].y.toStringAsFixed(1)})',
+          '============================$lowYLimit=====================================================Найдено лазерных центров: ${laserCenters.length}   (${laserCenters[0].x.toStringAsFixed(1)}, ${laserCenters[0].y.toStringAsFixed(1)})',
         );
       }
 

@@ -33,7 +33,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
   Size? _actualPreviewSize;
 
   int minXLaserZone = 10;
-  int maxXLaserZone = 250;
+  int maxXLaserZone = 600;
   int minYLaserZone = 10;
   int maxYLaserZone = 250;
 
@@ -51,6 +51,9 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
   List<dartcv.Point2f> _detectedLaserCenters = [];
   late ArucoDetectorService _arucoService;
 
+  int _processingTime = 0;
+  double _laserLevel = 0.5;
+
   @override
   void initState() {
     super.initState();
@@ -66,6 +69,19 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
     _controller?.dispose();
     _arucoService.dispose();
     super.dispose();
+  }
+
+  void _startDetection() {
+    /* ... */
+  }
+  void _openConfig() {
+    /* ... */
+  }
+  void _setLaserLevel(double value) {
+    setState(() {
+      _laserLevel = value;
+      globalLowYLimit=value.toInt();
+    });
   }
 
   Future<void> _initializeCamera() async {
@@ -248,8 +264,11 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
     _lastProcessTime = now;
 
     try {
-      final brightness = await _calculateBrightness(image);
+      // final brightness = await _calculateBrightness(image);
+      double brightness = 0;
       // final centers = await compute(_processArucoInIsolate, image);
+
+      final stopwatch = Stopwatch()..start();
 
       final centersLaserData = await compute(
         _processLaserInIsolate,
@@ -259,6 +278,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
           maxXLaserZone: maxXLaserZone,
           minYLaserZone: minYLaserZone,
           maxYLaserZone: maxYLaserZone,
+          lowYLimit:globalLowYLimit
         ),
       );
       final centersLaser =
@@ -266,16 +286,26 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
               .map((data) => dartcv.Point2f(data[0], data[1]))
               .toList();
 
+      // List<List<double>> centersData = [];
       final centersData = await compute(_processArucoInIsolate, image);
       // Конвертируем обратно в Point2f
       final centers =
           centersData.map((data) => dartcv.Point2f(data[0], data[1])).toList();
+
+      stopwatch.stop();
+
+      print('🕒 Обработка кадра заняла: ${stopwatch.elapsedMilliseconds}ms');
+      print(
+        '📊 FPS: ${(1000 / stopwatch.elapsedMilliseconds).toStringAsFixed(1)}',
+      );
 
       if (mounted) {
         setState(() {
           _brightness = brightness;
           _detectedCenters = centers;
           _detectedLaserCenters = centersLaser;
+          _processingTime =
+              stopwatch.elapsedMilliseconds; // сохраняем для отображения в UI
           print("$_detectedCenters");
         });
       }
@@ -726,184 +756,281 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
     );
   }
 
-  Widget _buildLandscapeLayout() {
-    return
-    // Row(
-    Stack(
-      children: [
-        Column(
-          children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  _buildCameraPreview(),
+Widget _buildLandscapeLayout() {
+  return Stack(
+    children: [
+      Column(
+        children: [
+          Expanded(
+            child: Stack(
+              children: [
+                _buildCameraPreview(),
 
-                  Positioned(
-                    left: MediaQuery.of(context).size.width * 0.0, //0.25,
-                    top: MediaQuery.of(context).size.height * 0.0, //0.25,
-                    child: Container(
-                      width: MediaQuery.of(context).size.width * 1.0, //0.5,
-                      height: MediaQuery.of(context).size.height * 1.0, //0.5,
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Colors.red.withOpacity(0.7),
-                          width: 3,
-                        ),
+                Positioned(
+                  left: MediaQuery.of(context).size.width * 0.0,
+                  top: MediaQuery.of(context).size.height * 0.0,
+                  child: Container(
+                    width: MediaQuery.of(context).size.width * 1.0,
+                    height: MediaQuery.of(context).size.height * 1.0,
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Colors.red.withOpacity(0.7),
+                        width: 3,
                       ),
                     ),
                   ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+
+      Align(
+        alignment: Alignment.centerRight,
+        // Оборачиваем правую панель и слайдер в Row
+        child: Row(
+          mainAxisSize: MainAxisSize.min, // Чтобы Row не занимал всю ширину
+          children: [
+            Container(
+              width: 150,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.2),
+                border: Border(left: BorderSide(color: Colors.grey.shade800)),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Кнопка Start
+                  ElevatedButton(
+                    onPressed: _startDetection, // Замените на ваш метод
+                    child: const Text('Start'),
+                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 40)),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Кнопка Config
+                  ElevatedButton(
+                    onPressed: _openConfig, // Замените на ваш метод
+                    child: const Text('Config'),
+                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 40)),
+                  ),
+                  const SizedBox(height: 20),
+
+                  _buildLevelIndicator(),
                 ],
+              ),
+            ),
+
+            // Вертикальный ползунок (Slider) справа
+            Container(
+              width: 48, // Достаточно для слайдера
+              color: Colors.black.withOpacity(0.2), // Фон для слайдера
+              child: RotatedBox(
+                quarterTurns: 3, // Поворачиваем Slider на 270 градусов (вертикально сверху вниз)
+                child: Container(
+                  width: MediaQuery.of(context).size.height, // Слайдер занимает высоту экрана в повернутом состоянии
+                  height: 48, // Высота контейнера для повернутого слайдера
+                  child: Slider(
+                    value: _laserLevel, // Переменная состояния для уровня лазера
+                    min: 0,
+                    max: 255, // Обычный диапазон для значений яркости
+                    divisions: 255, // Плавная регулировка
+                    label: _laserLevel.round().toString(),
+                    onChanged: (double value) {
+                      _setLaserLevel(value); // Метод обновления состояния
+                    },
+                  ),
+                ),
               ),
             ),
           ],
         ),
+      ),
+    ],
+  );
+}
 
-        Align(
-          alignment: Alignment.centerRight,
-          child: Container(
-            width: 150,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.2),
-              border: Border(left: BorderSide(color: Colors.grey.shade800)),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Индикация ориентации
-                // Container(
-                //   padding: const EdgeInsets.all(12),
-                //   decoration: BoxDecoration(
-                //     color: Colors.blue.shade900.withOpacity(0.3),
-                //     borderRadius: BorderRadius.circular(10),
-                //     border: Border.all(color: Colors.blue.shade700),
-                //   ),
-                //   child: Column(
-                //     children: [
-                //       Icon(Icons.straighten, color: _getTiltColor(), size: 32),
-                //       const SizedBox(height: 8),
-                //       Text(
-                //         'Горизонт',
-                //         style: TextStyle(
-                //           color: Colors.grey.shade300,
-                //           fontSize: 14,
-                //         ),
-                //       ),
-                //       Text(
-                //         '${_rollAngle.abs().toStringAsFixed(1)}°',
-                //         style: TextStyle(
-                //           color: _getTiltColor(),
-                //           fontSize: 18,
-                //           fontWeight: FontWeight.bold,
-                //         ),
-                //       ),
-                //     ],
-                //   ),
-                // ),
 
-                // const SizedBox(height: 16),
 
-                // Яркость
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: _getBrightnessColor(_brightness).withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _getBrightnessColor(_brightness),
-                      width: 2,
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        '${(_brightness * 100).toStringAsFixed(1)}%',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: _getBrightnessColor(_brightness),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _getBrightnessLevel(_brightness),
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: _getBrightnessColor(_brightness),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+  // Widget _buildLandscapeLayout() {
+  //   return
+  //   // Row(
+  //   Stack(
+  //     children: [
+  //       Column(
+  //         children: [
+  //           Expanded(
+  //             child: Stack(
+  //               children: [
+  //                 _buildCameraPreview(),
 
-                const SizedBox(height: 20),
-                _buildLevelIndicator(),
+  //                 Positioned(
+  //                   left: MediaQuery.of(context).size.width * 0.0, //0.25,
+  //                   top: MediaQuery.of(context).size.height * 0.0, //0.25,
+  //                   child: Container(
+  //                     width: MediaQuery.of(context).size.width * 1.0, //0.5,
+  //                     height: MediaQuery.of(context).size.height * 1.0, //0.5,
+  //                     decoration: BoxDecoration(
+  //                       border: Border.all(
+  //                         color: Colors.red.withOpacity(0.7),
+  //                         width: 3,
+  //                       ),
+  //                     ),
+  //                   ),
+  //                 ),
+  //               ],
+  //             ),
+  //           ),
+  //         ],
+  //       ),
 
-                // Progress bar яркости
-                // Column(
-                //   children: [
-                //     Text(
-                //       'Яркость',
-                //       style: TextStyle(color: Colors.grey.shade300, fontSize: 14),
-                //     ),
-                //     const SizedBox(height: 8),
-                //     LinearProgressIndicator(
-                //       value: _brightness,
-                //       backgroundColor: Colors.grey.shade800,
-                //       valueColor: AlwaysStoppedAnimation<Color>(
-                //         _getBrightnessColor(_brightness),
-                //       ),
-                //       minHeight: 8,
-                //       borderRadius: BorderRadius.circular(4),
-                //     ),
-                //   ],
-                // ),
+  //       Align(
+  //         alignment: Alignment.centerRight,
+  //         child: Container(
+  //           width: 150,
+  //           padding: const EdgeInsets.all(16),
+  //           decoration: BoxDecoration(
+  //             color: Colors.black.withOpacity(0.2),
+  //             border: Border(left: BorderSide(color: Colors.grey.shade800)),
+  //           ),
+  //           child: Column(
+  //             mainAxisAlignment: MainAxisAlignment.center,
+  //             children: [
+  //               // Индикация ориентации
+  //               // Container(
+  //               //   padding: const EdgeInsets.all(12),
+  //               //   decoration: BoxDecoration(
+  //               //     color: Colors.blue.shade900.withOpacity(0.3),
+  //               //     borderRadius: BorderRadius.circular(10),
+  //               //     border: Border.all(color: Colors.blue.shade700),
+  //               //   ),
+  //               //   child: Column(
+  //               //     children: [
+  //               //       Icon(Icons.straighten, color: _getTiltColor(), size: 32),
+  //               //       const SizedBox(height: 8),
+  //               //       Text(
+  //               //         'Горизонт',
+  //               //         style: TextStyle(
+  //               //           color: Colors.grey.shade300,
+  //               //           fontSize: 14,
+  //               //         ),
+  //               //       ),
+  //               //       Text(
+  //               //         '${_rollAngle.abs().toStringAsFixed(1)}°',
+  //               //         style: TextStyle(
+  //               //           color: _getTiltColor(),
+  //               //           fontSize: 18,
+  //               //           fontWeight: FontWeight.bold,
+  //               //         ),
+  //               //       ),
+  //               //     ],
+  //               //   ),
+  //               // ),
 
-                // const SizedBox(height: 20),
+  //               // const SizedBox(height: 16),
 
-                // Кнопка калибровки
-                // ElevatedButton.icon(
-                //   onPressed: _isCalibrating ? null : _calibrateHorizon,
-                //   icon:
-                //       _isCalibrating
-                //           ? const SizedBox(
-                //             width: 16,
-                //             height: 16,
-                //             child: CircularProgressIndicator(strokeWidth: 2),
-                //           )
-                //           : const Icon(Icons.calendar_today, size: 16),
-                //   label: Text(
-                //     _isCalibrating ? 'Калибровка...' : 'Калибровать горизонт',
-                //   ),
-                //   style: ElevatedButton.styleFrom(
-                //     backgroundColor: Colors.blue.shade800,
-                //     foregroundColor: Colors.white,
-                //     minimumSize: const Size(double.infinity, 40),
-                //   ),
-                // ),
+  //               // Индикация  Яркость
+  //               // Container(
+  //               //   padding: const EdgeInsets.all(16),
+  //               //   decoration: BoxDecoration(
+  //               //     color: _getBrightnessColor(_brightness).withOpacity(0.2),
+  //               //     borderRadius: BorderRadius.circular(12),
+  //               //     border: Border.all(
+  //               //       color: _getBrightnessColor(_brightness),
+  //               //       width: 2,
+  //               //     ),
+  //               //   ),
+  //               //   child: Column(
+  //               //     children: [
+  //               //       Text(
+  //               //         '${(_brightness * 100).toStringAsFixed(1)}%',
+  //               //         style: TextStyle(
+  //               //           fontSize: 24,
+  //               //           fontWeight: FontWeight.bold,
+  //               //           color: _getBrightnessColor(_brightness),
+  //               //         ),
+  //               //       ),
+  //               //       const SizedBox(height: 8),
+  //               //       Text(
+  //               //         _getBrightnessLevel(_brightness),
+  //               //         style: TextStyle(
+  //               //           fontSize: 14,
+  //               //           color: _getBrightnessColor(_brightness),
+  //               //           fontWeight: FontWeight.bold,
+  //               //         ),
+  //               //       ),
+  //               //     ],
+  //               //   ),
+  //               // ),
+  //               const SizedBox(height: 20),
+  //               _buildLevelIndicator(),
 
-                // const SizedBox(height: 10),
+  //               // Progress bar яркости
+  //               // Column(
+  //               //   children: [
+  //               //     Text(
+  //               //       'Яркость',
+  //               //       style: TextStyle(color: Colors.grey.shade300, fontSize: 14),
+  //               //     ),
+  //               //     const SizedBox(height: 8),
+  //               //     LinearProgressIndicator(
+  //               //       value: _brightness,
+  //               //       backgroundColor: Colors.grey.shade800,
+  //               //       valueColor: AlwaysStoppedAnimation<Color>(
+  //               //         _getBrightnessColor(_brightness),
+  //               //       ),
+  //               //       minHeight: 8,
+  //               //       borderRadius: BorderRadius.circular(4),
+  //               //     ),
+  //               //   ],
+  //               // ),
 
-                // Сброс калибровки
-                // TextButton(
-                //   onPressed: () {
-                //     setState(() {
-                //       _calibrationOffset = 0.0;
-                //     });
-                //   },
-                //   child: const Text(
-                //     'Сбросить калибровку',
-                //     style: TextStyle(color: Colors.grey),
-                //   ),
-                // ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  //               // const SizedBox(height: 20),
+
+  //               // Кнопка калибровки
+  //               // ElevatedButton.icon(
+  //               //   onPressed: _isCalibrating ? null : _calibrateHorizon,
+  //               //   icon:
+  //               //       _isCalibrating
+  //               //           ? const SizedBox(
+  //               //             width: 16,
+  //               //             height: 16,
+  //               //             child: CircularProgressIndicator(strokeWidth: 2),
+  //               //           )
+  //               //           : const Icon(Icons.calendar_today, size: 16),
+  //               //   label: Text(
+  //               //     _isCalibrating ? 'Калибровка...' : 'Калибровать горизонт',
+  //               //   ),
+  //               //   style: ElevatedButton.styleFrom(
+  //               //     backgroundColor: Colors.blue.shade800,
+  //               //     foregroundColor: Colors.white,
+  //               //     minimumSize: const Size(double.infinity, 40),
+  //               //   ),
+  //               // ),
+
+  //               // const SizedBox(height: 10),
+
+  //               // Сброс калибровки
+  //               // TextButton(
+  //               //   onPressed: () {
+  //               //     setState(() {
+  //               //       _calibrationOffset = 0.0;
+  //               //     });
+  //               //   },
+  //               //   child: const Text(
+  //               //     'Сбросить калибровку',
+  //               //     style: TextStyle(color: Colors.grey),
+  //               //   ),
+  //               // ),
+  //             ],
+  //           ),
+  //         ),
+  //       ),
+  //     ],
+  //   );
+  // }
 
   Widget _buildLoadingScreen() {
     return Container(
@@ -977,8 +1104,8 @@ class MarkerPainter extends CustomPainter {
         Paint()
           ..color = Colors.red
           ..style = PaintingStyle.fill;
-          // ..style = PaintingStyle.stroke;
-          
+    // ..style = PaintingStyle.stroke;
+
     final testMarcker = transformCoordinates(dartcv.Point2f(320, 210));
     for (final center in detectedCenters) {
       // Преобразуем координаты из системы кадра в систему экрана
@@ -1000,11 +1127,11 @@ class MarkerPainter extends CustomPainter {
         paint,
       );
     }
-    canvas.drawCircle(
-      Offset(testMarcker.x, testMarcker.y),
-      8.0, // радиус кружочка
-      paint,
-    );
+    // canvas.drawCircle(
+    //   Offset(testMarcker.x, testMarcker.y),
+    //   8.0, // радиус кружочка
+    //   paint,
+    // );
   }
 
   @override
