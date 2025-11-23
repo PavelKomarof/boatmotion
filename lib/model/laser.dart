@@ -356,16 +356,42 @@ void printPixelYUV(CameraImage image, int i, int j) {
   final Uint8List bytesU = image.planes[1].bytes;
   final Uint8List bytesV = image.planes[2].bytes;
 
-  // 2. Рассчитываем смещения (Offsets)
-  // Y-план имеет полное разрешение:
-  final int offsetY = j * width + i;
+  // Параметры плоскостей (Stride):
+  final int yStride = image.planes[0].bytesPerRow;
+  final int uStride = image.planes[1].bytesPerRow;
+  final int vStride = image.planes[2].bytesPerRow;
+  // Обратите внимание: bytesPerPixel для U/V обычно равен 1 в YUV420, но лучше использовать явное значение, если оно доступно.
+
+  final int yPerPixel = image.planes[0].bytesPerPixel??1;
+  final int uPerPixel = image.planes[1].bytesPerPixel??1;
+  final int vPerPixel = image.planes[2].bytesPerPixel??1;
+
+
+
+  // // 2. Рассчитываем смещения (Offsets)
+  // // Y-план имеет полное разрешение:
+  // final int offsetY = j * width + i;
+  // final int yValue = bytesY[offsetY];
+
+
+    // 1. Y-плоскость: Используем полный размер и Y-Stride
+  // Индекс = (номер_строки * шаг_строки) + (номер_столбца * шаг_пикселя)
+  // Для Y шаг пикселя всегда 1
+  final int offsetY = j * yStride + i*yPerPixel;
   final int yValue = bytesY[offsetY];
 
-  // U и V планы имеют половинное разрешение (Subsampled 4:2:0),
-  // то есть 1x1 блок цветности на 2x2 блока яркости.
-  // Делим координаты на 2, чтобы попасть в правильный блок цветности:
-  final int uIndex = (j ~/ 2) * (width ~/ 2) + (i ~/ 2);
-  final int vIndex = (j ~/ 2) * (width ~/ 2) + (i ~/ 2);
+  // // U и V планы имеют половинное разрешение (Subsampled 4:2:0),
+  // // то есть 1x1 блок цветности на 2x2 блока яркости.
+  // // Делим координаты на 2, чтобы попасть в правильный блок цветности:
+  // final int uIndex = (j ~/ 2) * (width ~/ 2) + (i ~/ 2);
+  // final int vIndex = (j ~/ 2) * (width ~/ 2) + (i ~/ 2);
+
+
+  // 2. U и V плоскости: Делим координаты на 2 и используем их Stride
+  // Индекс = (номер_строки_uv * шаг_строки_uv) + (номер_столбца_uv * шаг_пикселя_uv)
+
+  final int uIndex = (j ~/ 2) * uStride + (i ~/ 2)*uPerPixel;
+  final int vIndex = (j ~/ 2) * vStride + (i ~/ 2)*vPerPixel;
 
   // В зависимости от bytesPerPixel (2 в вашем случае), вам может понадобиться
   // скорректировать индекс, но для простых планарных данных (p)

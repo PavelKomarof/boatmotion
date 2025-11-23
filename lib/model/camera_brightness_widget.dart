@@ -245,20 +245,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
       final brightness = await _calculateBrightness(image);
       // final centers = await compute(_processArucoInIsolate, image);
 
-
-
-
-
-
-
       final centersLaserData = await compute(_processLaserInIsolate, image);
-
-
-
-
-
-
-
 
       final centersData = await compute(_processArucoInIsolate, image);
       // Конвертируем обратно в Point2f
@@ -306,9 +293,6 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
       service.dispose();
     }
   }
-
-
-
 
   Future<double> _calculateBrightness(CameraImage image) async {
     return await compute(_isolatedBrightnessCalculation, image);
@@ -527,7 +511,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
       _offsetY = 0;
 
       // Эмпирическая коррекция для смещения вправо
-      _offsetX = (_previewCenter?.dx ?? 0) - 640.0 / 2.0 -36;
+      _offsetX = (_previewCenter?.dx ?? 0) - 640.0 / 2.0 - 36;
       _correctionX = _offsetX; // или другое значение
     }
 
@@ -616,16 +600,14 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
   }
 
   Widget _buildLevelIndicator() {
-    return 
-    Container(
+    return Container(
       // margin: const EdgeInsets.symmetric(horizontal: 40),
       // padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.7),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: 
-      Row(
+      child: Row(
         // mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           Column(
@@ -966,7 +948,7 @@ class MarkerPainter extends CustomPainter {
           ..color = Colors.red
           // ..style = PaintingStyle.fill;
           ..style = PaintingStyle.stroke;
-
+    final testMarcker = transformCoordinates(dartcv.Point2f(320, 210));
     for (final center in detectedCenters) {
       // Преобразуем координаты из системы кадра в систему экрана
       final screenCenter = transformCoordinates(center);
@@ -977,11 +959,11 @@ class MarkerPainter extends CustomPainter {
         paint,
       );
     }
-          canvas.drawCircle(
-        Offset(320, 210),
-        8.0, // радиус кружочка
-        paint,
-      );
+    canvas.drawCircle(
+      Offset(testMarcker.x, testMarcker.y),
+      8.0, // радиус кружочка
+      paint,
+    );
   }
 
   @override
