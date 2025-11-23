@@ -32,6 +32,11 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
   Offset? _previewCenter;
   Size? _actualPreviewSize;
 
+  int minXLaserZone = 10;
+  int maxXLaserZone = 250;
+  int minYLaserZone = 10;
+  int maxYLaserZone = 250;
+
   List<CameraDescription>? _cameras;
   double _brightness = 0.0;
   bool _isInitialized = false;
@@ -43,6 +48,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
   bool _isCalibrating = false;
   double _calibrationOffset = 0.0;
   List<dartcv.Point2f> _detectedCenters = [];
+  List<dartcv.Point2f> _detectedLaserCenters = [];
   late ArucoDetectorService _arucoService;
 
   @override
@@ -245,7 +251,20 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
       final brightness = await _calculateBrightness(image);
       // final centers = await compute(_processArucoInIsolate, image);
 
-      final centersLaserData = await compute(_processLaserInIsolate, image);
+      final centersLaserData = await compute(
+        _processLaserInIsolate,
+        LaserProcessingData(
+          image: image,
+          minXLaserZone: minXLaserZone,
+          maxXLaserZone: maxXLaserZone,
+          minYLaserZone: minYLaserZone,
+          maxYLaserZone: maxYLaserZone,
+        ),
+      );
+      final centersLaser =
+          centersLaserData
+              .map((data) => dartcv.Point2f(data[0], data[1]))
+              .toList();
 
       final centersData = await compute(_processArucoInIsolate, image);
       // Конвертируем обратно в Point2f
@@ -256,6 +275,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
         setState(() {
           _brightness = brightness;
           _detectedCenters = centers;
+          _detectedLaserCenters = centersLaser;
           print("$_detectedCenters");
         });
       }
@@ -282,11 +302,12 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
   }
 
   // Для использования в isolate
-  static List<List<double>> _processLaserInIsolate(CameraImage image) {
+  static List<List<double>> _processLaserInIsolate(LaserProcessingData data) {
     final service = LaserDetectorService();
     try {
       // return service.processFrame(image);
-      final centers = service.processLaserFrame(image);
+
+      final centers = service.processLaserFrame(data);
       // Конвертируем Point2f в List<double>
       return centers.map((point) => [point.x, point.y]).toList();
     } finally {
@@ -908,7 +929,11 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
   Widget _buildMarkerOverlay() {
     return CustomPaint(
       // painter: MarkerPainter(_detectedCenters),
-      painter: MarkerPainter(_detectedCenters, _transformCoordinates),
+      painter: MarkerPainter(
+        _detectedCenters,
+        _detectedLaserCenters,
+        _transformCoordinates,
+      ),
       child: Container(),
     );
   }
@@ -937,19 +962,35 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
 // }
 class MarkerPainter extends CustomPainter {
   final List<dartcv.Point2f> detectedCenters;
+  final List<dartcv.Point2f> detectedLaserCenters;
   final dartcv.Point2f Function(dartcv.Point2f) transformCoordinates;
 
-  MarkerPainter(this.detectedCenters, this.transformCoordinates);
+  MarkerPainter(
+    this.detectedCenters,
+    this.detectedLaserCenters,
+    this.transformCoordinates,
+  );
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint =
         Paint()
           ..color = Colors.red
-          // ..style = PaintingStyle.fill;
-          ..style = PaintingStyle.stroke;
+          ..style = PaintingStyle.fill;
+          // ..style = PaintingStyle.stroke;
+          
     final testMarcker = transformCoordinates(dartcv.Point2f(320, 210));
     for (final center in detectedCenters) {
+      // Преобразуем координаты из системы кадра в систему экрана
+      final screenCenter = transformCoordinates(center);
+
+      canvas.drawCircle(
+        Offset(screenCenter.x, screenCenter.y),
+        8.0, // радиус кружочка
+        paint,
+      );
+    }
+    for (final center in detectedLaserCenters) {
       // Преобразуем координаты из системы кадра в систему экрана
       final screenCenter = transformCoordinates(center);
 

@@ -1,12 +1,237 @@
 import 'package:camera/camera.dart';
+import 'package:opencv_dart/opencv.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 import 'dart:typed_data';
 
 // 222222222222222222222222222222222222222222222222222222222222222
 // 222222222222222222222222222222222222222222222222222222222222222
 // 222222222222222222222222222222222222222222222222222222222222222
+
+// Класс для передачи всех данных
+class LaserProcessingData {
+  final CameraImage image;
+  final int minXLaserZone;
+  final int maxXLaserZone;
+  final int minYLaserZone;
+  final int maxYLaserZone;
+
+  LaserProcessingData({
+    required this.image,
+    required this.minXLaserZone,
+    required this.maxXLaserZone,
+    required this.minYLaserZone,
+    required this.maxYLaserZone,
+  });
+}
+
+/// Вспомогательный класс для хранения информации о лазерном пятне
+class LaserSpot {
+  final int area;
+  final int width;
+  final int height;
+  final double centerX;
+  final double centerY;
+
+  LaserSpot({
+    required this.area,
+    required this.width,
+    required this.height,
+    required this.centerX,
+    required this.centerY,
+  });
+
+  @override
+  String toString() {
+    return 'Spot(area: $area, size: ${width}x$height, center: (${centerX.toStringAsFixed(1)}, ${centerY.toStringAsFixed(1)}))';
+  }
+}
+
 class LaserDetectorService {
   LaserDetectorService() {}
+
+  /// Основная функция обработки кадра, которая находит центры лазерных пятен.
+  List<cv.Point2f> processLaserFrame(LaserProcessingData data) {
+    final image = data.image;
+    final minXLaserZone = data.minXLaserZone;
+    final maxXLaserZone = data.maxXLaserZone;
+    final minYLaserZone = data.minYLaserZone;
+    final maxYLaserZone = data.maxYLaserZone;
+    int lowYLimit = 180;
+
+    List<cv.Point2f> laserCenters = [];
+
+    printPixelYUV(image, 320, 210);
+
+    // Проверяем формат изображения
+    if (image.format.group != ImageFormatGroup.yuv420) {
+      print('Unsupported image format: ${image.format.group}');
+      return laserCenters;
+    }
+
+    try {
+      // 1. Получаем Y-плоскость (яркость)
+      final yPlane = image.planes[0];
+      final yBytes = yPlane.bytes;
+      final yRowStride = yPlane.bytesPerRow;
+      final width = image.width;
+      final height = image.height;
+
+      // 2. Создаем бинарную маску где Y > lowYLimit
+      final mask = Uint8List(width * height);
+
+      for (int y = minYLaserZone; y < maxYLaserZone; y++) {
+        for (int x = minXLaserZone; x < maxXLaserZone; x++) {
+          final yIndex = (y * yRowStride) + x;
+          if (yIndex < yBytes.length) {
+            final yValue = yBytes[yIndex] & 0xFF;
+            final maskIndex = y * width + x;
+            mask[maskIndex] = (yValue > lowYLimit) ? 255 : 0;
+          }
+        }
+      }
+
+      // 3. Создаем OpenCV матрицу из маски
+      // final Mat maskMat = cv.Mat.fromBytes(
+      //   height,
+      //   width,
+      //   cv.MatType.CV_8UC1,
+      //   mask,
+      // );
+
+      // Временно добавьте для отладки
+      // void debugMatMethods() {
+      //   final tempMat = cv.Mat.empty();
+      //   print('Доступные методы Mat:');
+      //   print(tempMat.runtimeType.methods); // Это покажет доступные методы
+      // }
+
+      // 3. Создаем пустую матрицу и заполняем данными
+      final maskMat = cv.Mat.zeros(height, width, cv.MatType.CV_8UC1);
+      for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+          final value = mask[y * width + x];
+          maskMat.set<int>(y, x, value);
+        }
+      }
+
+      // 4. Создаем выходные матрицы
+      cv.Mat? labels;
+      cv.Mat? stats;
+      cv.Mat? centroids;
+      labels = cv.Mat.empty();
+      stats = cv.Mat.empty();
+      centroids = cv.Mat.empty();
+
+      // // 4. Поиск связанных компонентов
+      // final connectedComponents = cv.connectedComponentsWithStats(
+      //   maskMat,
+      //   connectivity: 8,
+      //   ltype: cv.MatType.CV_32S,
+      // );
+
+      // 5. Выполняем поиск связанных компонентов
+      final numComponents = cv.connectedComponentsWithStats(
+        maskMat,
+        labels, // выход: метки компонентов
+        stats, // выход: статистика по компонентам
+        centroids, // выход: центроиды
+        8, // 8-связность
+        cv.MatType.CV_32S, // тип данных для меток
+        cv.CCL_DEFAULT, // ccltype: алгоритм связности (по умолчанию)
+      );
+
+      // final labels = connectedComponents.$1;
+      // final stats = connectedComponents.$2;
+      // final centroids = connectedComponents.$3;
+
+      // final numComponents = stats.rows;
+
+      // 5. Анализ каждого компонента
+      final List<LaserSpot> spots = [];
+
+      for (int i = 1; i < numComponents; i++) {
+        // начинаем с 1, т.к. 0 - фон
+        final area = stats.at<int>(i, cv.CC_STAT_AREA);
+
+        if (area < 10) continue; // пропускаем слишком маленькие области
+
+        final left = stats.at<int>(i, cv.CC_STAT_LEFT);
+        final top = stats.at<int>(i, cv.CC_STAT_TOP);
+        final width = stats.at<int>(i, cv.CC_STAT_WIDTH);
+        final height = stats.at<int>(i, cv.CC_STAT_HEIGHT);
+
+        final centerX = centroids.at<double>(i, 0);
+        final centerY = centroids.at<double>(i, 1);
+
+        spots.add(
+          LaserSpot(
+            area: area,
+            width: width,
+            height: height,
+            centerX: centerX,
+            centerY: centerY,
+          ),
+        );
+      }
+
+      // 6. Фильтрация по соотношению сторон
+      final filteredSpots =
+          spots.where((spot) {
+            if (spot.width == 0 || spot.height == 0) return false;
+
+            final aspectRatio = spot.width / spot.height;
+            final maxAspectRatioDiff = 0.2; // 20%
+
+            return (aspectRatio >= (1.0 - maxAspectRatioDiff)) &&
+                (aspectRatio <= (1.0 + maxAspectRatioDiff));
+          }).toList();
+
+      // 7. Сортировка по площади (по убыванию)
+      filteredSpots.sort((a, b) => b.area.compareTo(a.area));
+
+      // 8. Выбор пятен
+      if (filteredSpots.isNotEmpty) {
+        // Добавляем самое большое пятно
+        final largestSpot = filteredSpots.first;
+        laserCenters.add(cv.Point2f(largestSpot.centerX, largestSpot.centerY));
+
+        // Проверяем второе пятно (если есть)
+        if (filteredSpots.length >= 2) {
+          final secondSpot = filteredSpots[1];
+          final areaDifference =
+              (largestSpot.area - secondSpot.area).abs() / largestSpot.area;
+          final maxAreaDiff = 0.15; // 15%
+
+          if (areaDifference <= maxAreaDiff) {
+            laserCenters.add(
+              cv.Point2f(secondSpot.centerX, secondSpot.centerY),
+            );
+          }
+        }
+      }
+
+      // 9. Очистка ресурсов
+      maskMat.release();
+      labels.release();
+      stats.release();
+      centroids.release();
+      if (laserCenters.length > 0) {
+        print(
+          '=================================================================================Найдено лазерных центров: ${laserCenters.length}   (${laserCenters[0].x.toStringAsFixed(1)}, ${laserCenters[0].y.toStringAsFixed(1)})',
+        );
+      }
+
+      for (final center in laserCenters) {
+        print(
+          'Центр: (${center.x.toStringAsFixed(1)}, ${center.y.toStringAsFixed(1)})',
+        );
+      }
+    } catch (e) {
+      print('Ошибка обработки лазерного кадра: $e');
+    }
+
+    return laserCenters;
+  }
 
   // List<Point2f> processFrame(CameraImage image) {
   //   final grayMat = _convertToGrayscale(image);
@@ -40,181 +265,181 @@ class LaserDetectorService {
   //   return centers;
   // }
 
-  /// Основная функция обработки кадра, которая находит центры лазерных пятен.
-  List<cv.Point2f> processLaserFrame(CameraImage image) {
-    List<cv.Point2f> laserCenters = [];
-    // cv.Mat? hsvImage;
-    // cv.Mat? mask1;
-    // cv.Mat? mask2;
-    // cv.Mat? redMask;
-    // cv.Mat? kernel;
+  // /// Основная функция обработки кадра, которая находит центры лазерных пятен.
+  // List<cv.Point2f> processLaserFrame(CameraImage image) {
+  //   List<cv.Point2f> laserCenters = [];
+  //   // cv.Mat? hsvImage;
+  //   // cv.Mat? mask1;
+  //   // cv.Mat? mask2;
+  //   // cv.Mat? redMask;
+  //   // cv.Mat? kernel;
 
-    // // Добавляем переменные для границ цвета:
-    // cv.Mat? lowerRed1;
-    // cv.Mat? upperRed1;
-    // cv.Mat? lowerRed2;
-    // cv.Mat? upperRed2;
-    // cv.Mat? openedMask;
-    // cv.Mat? closedMask;
+  //   // // Добавляем переменные для границ цвета:
+  //   // cv.Mat? lowerRed1;
+  //   // cv.Mat? upperRed1;
+  //   // cv.Mat? lowerRed2;
+  //   // cv.Mat? upperRed2;
+  //   // cv.Mat? openedMask;
+  //   // cv.Mat? closedMask;
 
-    // // List<cv.Mat>? contours;
-    // dynamic contours;
+  //   // // List<cv.Mat>? contours;
+  //   // dynamic contours;
 
-    // try {
+  //   // try {
 
-    //  printPixelYUV(CameraImage image, int i, int j)
-    printPixelYUV(image, 320, 210);
+  //   //  printPixelYUV(CameraImage image, int i, int j)
+  //   printPixelYUV(image, 320, 210);
 
-    //   // 1. Преобразуем CameraImage в Mat в формате HSV
-    //   hsvImage = _convertToHSV(image);
+  //   //   // 1. Преобразуем CameraImage в Mat в формате HSV
+  //   //   hsvImage = _convertToHSV(image);
 
-    //   if (hsvImage.isEmpty) {
-    //     print("Failed to convert image to HSV.");
-    //     return laserCenters;
-    //   }
+  //   //   if (hsvImage.isEmpty) {
+  //   //     print("Failed to convert image to HSV.");
+  //   //     return laserCenters;
+  //   //   }
 
-    //   // 2. Определяем диапазоны для красного цвета в HSV (красный цвет на границе шкалы Hue 0-180)
+  //   //   // 2. Определяем диапазоны для красного цвета в HSV (красный цвет на границе шкалы Hue 0-180)
 
-    //   // // Нижний красный диапазон: Hue 0-10
-    //   // mask1 = cv.inRange(hsvImage, cv.Scalar(0, 100, 100), cv.Scalar(10, 255, 255));
-    //   // // Верхний красный диапазон: Hue 170-180
-    //   // mask2 = cv.inRange(hsvImage, cv.Scalar(170, 100, 100), cv.Scalar(180, 255, 255));
+  //   //   // // Нижний красный диапазон: Hue 0-10
+  //   //   // mask1 = cv.inRange(hsvImage, cv.Scalar(0, 100, 100), cv.Scalar(10, 255, 255));
+  //   //   // // Верхний красный диапазон: Hue 170-180
+  //   //   // mask2 = cv.inRange(hsvImage, cv.Scalar(170, 100, 100), cv.Scalar(180, 255, 255));
 
-    //   // Создаем Mat для нижнего диапазона HSV
-    //   // lowerRed1 = cv.Mat.fromNativeScalar(cv.Scalar(0, 100, 100));
-    //   // upperRed1 = cv.Mat.fromNativeScalar(cv.Scalar(10, 255, 255));
-    //   //     lowerRed1 = cv.Mat.fromRgba(0, 100, 100);
-    //   // upperRed1 = cv.Mat.fromRgba(10, 255, 255);
-    //   //     lowerRed1 = cv.Mat.fromVec([0.0, 100.0, 100.0], cv.MatType.CV_64FC1);
-    //   // upperRed1 = cv.Mat.fromVec([10.0, 255.0, 255.0], cv.MatType.CV_64FC1);
-    //   // lowerRed1 = cv.Mat.fromVec(cv.Vec4d(0.0, 100.0, 100.0, 0.0));
-    //   // upperRed1 = cv.Mat.fromVec(cv.Vec4d(10.0, 255.0, 255.0, 0.0));
+  //   //   // Создаем Mat для нижнего диапазона HSV
+  //   //   // lowerRed1 = cv.Mat.fromNativeScalar(cv.Scalar(0, 100, 100));
+  //   //   // upperRed1 = cv.Mat.fromNativeScalar(cv.Scalar(10, 255, 255));
+  //   //   //     lowerRed1 = cv.Mat.fromRgba(0, 100, 100);
+  //   //   // upperRed1 = cv.Mat.fromRgba(10, 255, 255);
+  //   //   //     lowerRed1 = cv.Mat.fromVec([0.0, 100.0, 100.0], cv.MatType.CV_64FC1);
+  //   //   // upperRed1 = cv.Mat.fromVec([10.0, 255.0, 255.0], cv.MatType.CV_64FC1);
+  //   //   // lowerRed1 = cv.Mat.fromVec(cv.Vec4d(0.0, 100.0, 100.0, 0.0));
+  //   //   // upperRed1 = cv.Mat.fromVec(cv.Vec4d(10.0, 255.0, 255.0, 0.0));
 
-    //   // final cv.Scalar lowerRed1 = cv.Scalar(0, 100, 100);
-    //   // final cv.Scalar upperRed1 = cv.Scalar(10, 255, 255);
-    //   // final cv.Scalar lowerRed2 = cv.Scalar(170, 100, 100);
-    //   // final cv.Scalar upperRed2 = cv.Scalar(180, 255, 255);
+  //   //   // final cv.Scalar lowerRed1 = cv.Scalar(0, 100, 100);
+  //   //   // final cv.Scalar upperRed1 = cv.Scalar(10, 255, 255);
+  //   //   // final cv.Scalar lowerRed2 = cv.Scalar(170, 100, 100);
+  //   //   // final cv.Scalar upperRed2 = cv.Scalar(180, 255, 255);
 
-    //   // Создаем Mat для верхнего диапазона HSV
-    //   // lowerRed2 = cv.Mat.fromNativeScalar(cv.Scalar(170, 100, 100));
-    //   // upperRed2 = cv.Mat.fromNativeScalar(cv.Scalar(180, 255, 255));
-    //   //     lowerRed2 = cv.Mat.fromRgba(170, 100, 100);
-    //   // upperRed2 = cv.Mat.fromRgba(180, 255, 255);
+  //   //   // Создаем Mat для верхнего диапазона HSV
+  //   //   // lowerRed2 = cv.Mat.fromNativeScalar(cv.Scalar(170, 100, 100));
+  //   //   // upperRed2 = cv.Mat.fromNativeScalar(cv.Scalar(180, 255, 255));
+  //   //   //     lowerRed2 = cv.Mat.fromRgba(170, 100, 100);
+  //   //   // upperRed2 = cv.Mat.fromRgba(180, 255, 255);
 
-    //   // // Нижний красный диапазон
-    //   // mask1 = cv.inRange(hsvImage!, lowerRed1!, upperRed1!);
-    //   // // Верхний красный диапазон
-    //   // mask2 = cv.inRange(hsvImage, lowerRed2!, upperRed2!);
+  //   //   // // Нижний красный диапазон
+  //   //   // mask1 = cv.inRange(hsvImage!, lowerRed1!, upperRed1!);
+  //   //   // // Верхний красный диапазон
+  //   //   // mask2 = cv.inRange(hsvImage, lowerRed2!, upperRed2!);
 
-    //   //  mask1 = cv.inRange(hsvImage, lowerRed1, upperRed1);
-    //   //   mask2 = cv.inRange(hsvImage, lowerRed2, upperRed2);
+  //   //   //  mask1 = cv.inRange(hsvImage, lowerRed1, upperRed1);
+  //   //   //   mask2 = cv.inRange(hsvImage, lowerRed2, upperRed2);
 
-    //   // lowerRed1 = cv.Mat.fromList([0, 100, 100]);
-    //   // upperRed1 = cv.Mat.fromList([10, 255, 255]);
-    //   // lowerRed2 = cv.Mat.fromList([170, 100, 100]);
-    //   // upperRed2 = cv.Mat.fromList([180, 255, 255]);
+  //   //   // lowerRed1 = cv.Mat.fromList([0, 100, 100]);
+  //   //   // upperRed1 = cv.Mat.fromList([10, 255, 255]);
+  //   //   // lowerRed2 = cv.Mat.fromList([170, 100, 100]);
+  //   //   // upperRed2 = cv.Mat.fromList([180, 255, 255]);
 
-    //   lowerRed1 = cv.Mat.fromList(1, 1, cv.MatType.CV_8UC3, [0, 100, 100]);
-    //   upperRed1 = cv.Mat.fromList(1, 1, cv.MatType.CV_8UC3, [10, 255, 255]);
-    //   lowerRed2 = cv.Mat.fromList(1, 1, cv.MatType.CV_8UC3, [170, 100, 100]);
-    //   upperRed2 = cv.Mat.fromList(1, 1, cv.MatType.CV_8UC3, [180, 255, 255]);
+  //   //   lowerRed1 = cv.Mat.fromList(1, 1, cv.MatType.CV_8UC3, [0, 100, 100]);
+  //   //   upperRed1 = cv.Mat.fromList(1, 1, cv.MatType.CV_8UC3, [10, 255, 255]);
+  //   //   lowerRed2 = cv.Mat.fromList(1, 1, cv.MatType.CV_8UC3, [170, 100, 100]);
+  //   //   upperRed2 = cv.Mat.fromList(1, 1, cv.MatType.CV_8UC3, [180, 255, 255]);
 
-    //   // Теперь передаем Mat в функцию inRange, как того требует сигнатура:
-    //   mask1 = cv.inRange(hsvImage, lowerRed1!, upperRed1!);
-    //   mask2 = cv.inRange(hsvImage, lowerRed2!, upperRed2!);
+  //   //   // Теперь передаем Mat в функцию inRange, как того требует сигнатура:
+  //   //   mask1 = cv.inRange(hsvImage, lowerRed1!, upperRed1!);
+  //   //   mask2 = cv.inRange(hsvImage, lowerRed2!, upperRed2!);
 
-    //   // 3. Комбинируем маски с помощью побитового ИЛИ
-    //   // redMask = cv.bitwiseOr(mask1, mask2);
-    //   // redMask = cv.bitwiseOr(mask1!, mask2!);
-    //   // redMask = cv.Core.bitwiseOr(mask1, mask2);
-    //   redMask = cv.bitwiseOR(mask1!, mask2!);
+  //   //   // 3. Комбинируем маски с помощью побитового ИЛИ
+  //   //   // redMask = cv.bitwiseOr(mask1, mask2);
+  //   //   // redMask = cv.bitwiseOr(mask1!, mask2!);
+  //   //   // redMask = cv.Core.bitwiseOr(mask1, mask2);
+  //   //   redMask = cv.bitwiseOR(mask1!, mask2!);
 
-    //   // 4. Применяем морфологические операции для удаления шума и объединения пятен
-    //   // kernel = cv.Mat.ones(5, 5, cv.MatType.CV_8U);
-    //   // kernel = cv.Mat.ones(5, 5, cv.MatType.fromValue(cv.MatType.CV_8U));
-    //   kernel = cv.Mat.ones(5, 5, cv.MatType(cv.MatType.CV_8U));
+  //   //   // 4. Применяем морфологические операции для удаления шума и объединения пятен
+  //   //   // kernel = cv.Mat.ones(5, 5, cv.MatType.CV_8U);
+  //   //   // kernel = cv.Mat.ones(5, 5, cv.MatType.fromValue(cv.MatType.CV_8U));
+  //   //   kernel = cv.Mat.ones(5, 5, cv.MatType(cv.MatType.CV_8U));
 
-    //   // MORPH_OPEN убирает мелкий шум
-    //   // cv.Mat openedMask = cv.morphologyEx(redMask, cv.MORPH_OPEN, kernel);
-    //   openedMask = cv.morphologyEx(redMask!, cv.MORPH_OPEN, kernel!);
-    //   // MORPH_CLOSE объединяет близкие точки в одно пятно
-    //   // cv.Mat closedMask = cv.morphologyEx(openedMask, cv.MORPH_CLOSE, kernel);
-    //   closedMask = cv.morphologyEx(openedMask, cv.MORPH_CLOSE, kernel);
+  //   //   // MORPH_OPEN убирает мелкий шум
+  //   //   // cv.Mat openedMask = cv.morphologyEx(redMask, cv.MORPH_OPEN, kernel);
+  //   //   openedMask = cv.morphologyEx(redMask!, cv.MORPH_OPEN, kernel!);
+  //   //   // MORPH_CLOSE объединяет близкие точки в одно пятно
+  //   //   // cv.Mat closedMask = cv.morphologyEx(openedMask, cv.MORPH_CLOSE, kernel);
+  //   //   closedMask = cv.morphologyEx(openedMask, cv.MORPH_CLOSE, kernel);
 
-    //   // 5. Находим контуры объектов на маске
-    //   // final contours = <cv.Mat>[];
-    //   // cv.findContours изменяет closedMask, поэтому используем ее как источник
-    //   // cv.findContours(
-    //   //   closedMask,
-    //   //   contours,
-    //   //   cv.RETR_EXTERNAL,
-    //   //   cv.CHAIN_APPROX_SIMPLE,
-    //   // );
-    //   // cv.findContours(closedMask!, contours, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-    //   final result = cv.findContours(
-    //     closedMask!,
-    //     cv.RETR_EXTERNAL,
-    //     cv.CHAIN_APPROX_SIMPLE,
-    //   );
-    //   contours =
-    //       result.$1; // Первый элемент кортежа - это список контуров (VecVecPoint)
-    //   // final hierarchy = result.$2; // Второй элемент кортежа - иерархия, нам она не нужна
+  //   //   // 5. Находим контуры объектов на маске
+  //   //   // final contours = <cv.Mat>[];
+  //   //   // cv.findContours изменяет closedMask, поэтому используем ее как источник
+  //   //   // cv.findContours(
+  //   //   //   closedMask,
+  //   //   //   contours,
+  //   //   //   cv.RETR_EXTERNAL,
+  //   //   //   cv.CHAIN_APPROX_SIMPLE,
+  //   //   // );
+  //   //   // cv.findContours(closedMask!, contours, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+  //   //   final result = cv.findContours(
+  //   //     closedMask!,
+  //   //     cv.RETR_EXTERNAL,
+  //   //     cv.CHAIN_APPROX_SIMPLE,
+  //   //   );
+  //   //   contours =
+  //   //       result.$1; // Первый элемент кортежа - это список контуров (VecVecPoint)
+  //   //   // final hierarchy = result.$2; // Второй элемент кортежа - иерархия, нам она не нужна
 
-    //   // 6. Фильтруем контуры по площади и вычисляем центры
+  //   //   // 6. Фильтруем контуры по площади и вычисляем центры
 
-    //   for (final contour in contours!) {
-    //     // contour теперь это отдельный Mat
-    //     double area = cv.contourArea(contour);
+  //   //   for (final contour in contours!) {
+  //   //     // contour теперь это отдельный Mat
+  //   //     double area = cv.contourArea(contour);
 
-    //     if (area > 100.0 && area < 5000.0) {
-    //       final moments = cv.moments(contour);
+  //   //     if (area > 100.0 && area < 5000.0) {
+  //   //       final moments = cv.moments(contour);
 
-    //       if (moments.m00 != 0) {
-    //         double centerX = moments.m10 / moments.m00;
-    //         double centerY = moments.m01 / moments.m00;
-    //         laserCenters.add(cv.Point2f(centerX, centerY));
-    //       }
-    //     }
-    //     // ОЧИЩАЕМ ЗДЕСЬ
-    //     contour.dispose();
-    //   }
+  //   //       if (moments.m00 != 0) {
+  //   //         double centerX = moments.m10 / moments.m00;
+  //   //         double centerY = moments.m01 / moments.m00;
+  //   //         laserCenters.add(cv.Point2f(centerX, centerY));
+  //   //       }
+  //   //     }
+  //   //     // ОЧИЩАЕМ ЗДЕСЬ
+  //   //     contour.dispose();
+  //   //   }
 
-    //   laserCenters.sort((a, b) => a.x.compareTo(b.x));
+  //   //   laserCenters.sort((a, b) => a.x.compareTo(b.x));
 
-    //   // 👇 ДОБАВЛЯЕМ ПЕЧАТЬ В КОНСОЛЬ ЗДЕСЬ 👇
-    //   if (laserCenters.isEmpty) {
-    //     print("Лазерные пятна не найдены.");
-    //   } else {
-    //     print("Найдены координаты лазеров:");
-    //     for (var center in laserCenters) {
-    //       print(
-    //         center.toString(),
-    //       ); // Использует переопределенный toString() в классе Point2f
-    //     }
-    //   }
-    //   // 👆 КОНЕЦ БЛОКА ПЕЧАТИ 👆
-    // } catch (e) {
-    //   print('Error in processFrame: $e');
-    // } finally {
-    //   // 7. Очищаем память ВСЕГДА
-    //   hsvImage?.dispose();
-    //   mask1?.dispose();
-    //   mask2?.dispose();
-    //   redMask?.dispose();
-    //   kernel?.dispose();
-    //   openedMask?.dispose();
-    //   closedMask?.dispose();
-    //   // openedMask и closedMask автоматически очищаются, т.к. были использованы внутри findContours
-    //   // Очищаем матрицы границ цвета:
-    //   lowerRed1?.dispose();
-    //   upperRed1?.dispose();
-    //   lowerRed2?.dispose();
-    //   upperRed2?.dispose();
-    //   contours.dispose();
-    // }
+  //   //   // 👇 ДОБАВЛЯЕМ ПЕЧАТЬ В КОНСОЛЬ ЗДЕСЬ 👇
+  //   //   if (laserCenters.isEmpty) {
+  //   //     print("Лазерные пятна не найдены.");
+  //   //   } else {
+  //   //     print("Найдены координаты лазеров:");
+  //   //     for (var center in laserCenters) {
+  //   //       print(
+  //   //         center.toString(),
+  //   //       ); // Использует переопределенный toString() в классе Point2f
+  //   //     }
+  //   //   }
+  //   //   // 👆 КОНЕЦ БЛОКА ПЕЧАТИ 👆
+  //   // } catch (e) {
+  //   //   print('Error in processFrame: $e');
+  //   // } finally {
+  //   //   // 7. Очищаем память ВСЕГДА
+  //   //   hsvImage?.dispose();
+  //   //   mask1?.dispose();
+  //   //   mask2?.dispose();
+  //   //   redMask?.dispose();
+  //   //   kernel?.dispose();
+  //   //   openedMask?.dispose();
+  //   //   closedMask?.dispose();
+  //   //   // openedMask и closedMask автоматически очищаются, т.к. были использованы внутри findContours
+  //   //   // Очищаем матрицы границ цвета:
+  //   //   lowerRed1?.dispose();
+  //   //   upperRed1?.dispose();
+  //   //   lowerRed2?.dispose();
+  //   //   upperRed2?.dispose();
+  //   //   contours.dispose();
+  //   // }
 
-    return laserCenters;
-  }
+  //   return laserCenters;
+  // }
 
   // Mat _convertToGrayscale(CameraImage image) {
   //   if (image.format.group == ImageFormatGroup.yuv420) {
@@ -362,22 +587,19 @@ void printPixelYUV(CameraImage image, int i, int j) {
   final int vStride = image.planes[2].bytesPerRow;
   // Обратите внимание: bytesPerPixel для U/V обычно равен 1 в YUV420, но лучше использовать явное значение, если оно доступно.
 
-  final int yPerPixel = image.planes[0].bytesPerPixel??1;
-  final int uPerPixel = image.planes[1].bytesPerPixel??1;
-  final int vPerPixel = image.planes[2].bytesPerPixel??1;
-
-
+  final int yPerPixel = image.planes[0].bytesPerPixel ?? 1;
+  final int uPerPixel = image.planes[1].bytesPerPixel ?? 1;
+  final int vPerPixel = image.planes[2].bytesPerPixel ?? 1;
 
   // // 2. Рассчитываем смещения (Offsets)
   // // Y-план имеет полное разрешение:
   // final int offsetY = j * width + i;
   // final int yValue = bytesY[offsetY];
 
-
-    // 1. Y-плоскость: Используем полный размер и Y-Stride
+  // 1. Y-плоскость: Используем полный размер и Y-Stride
   // Индекс = (номер_строки * шаг_строки) + (номер_столбца * шаг_пикселя)
   // Для Y шаг пикселя всегда 1
-  final int offsetY = j * yStride + i*yPerPixel;
+  final int offsetY = j * yStride + i * yPerPixel;
   final int yValue = bytesY[offsetY];
 
   // // U и V планы имеют половинное разрешение (Subsampled 4:2:0),
@@ -386,12 +608,11 @@ void printPixelYUV(CameraImage image, int i, int j) {
   // final int uIndex = (j ~/ 2) * (width ~/ 2) + (i ~/ 2);
   // final int vIndex = (j ~/ 2) * (width ~/ 2) + (i ~/ 2);
 
-
   // 2. U и V плоскости: Делим координаты на 2 и используем их Stride
   // Индекс = (номер_строки_uv * шаг_строки_uv) + (номер_столбца_uv * шаг_пикселя_uv)
 
-  final int uIndex = (j ~/ 2) * uStride + (i ~/ 2)*uPerPixel;
-  final int vIndex = (j ~/ 2) * vStride + (i ~/ 2)*vPerPixel;
+  final int uIndex = (j ~/ 2) * uStride + (i ~/ 2) * uPerPixel;
+  final int vIndex = (j ~/ 2) * vStride + (i ~/ 2) * vPerPixel;
 
   // В зависимости от bytesPerPixel (2 в вашем случае), вам может понадобиться
   // скорректировать индекс, но для простых планарных данных (p)
@@ -406,7 +627,9 @@ void printPixelYUV(CameraImage image, int i, int j) {
   // print('V (Chroma): $vValue');
   // print('----------------------------------');
   // print('------------------------------------------------------ Pixel ($i, $j)   Y : $yValue  U : $uValue  V : $vValue    -------------------');
-  print('($i, $j)[$yValue][${uValue-128}][${vValue-128}]');
+  print(
+    '($i, $j)                             [$yValue][${uValue - 128}][${vValue - 128}]',
+  );
 }
 
 
