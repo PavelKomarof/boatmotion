@@ -481,8 +481,10 @@ class ArucoDetectorService {
   }
 
   List<Point2f> processFrame(CameraImage image) {
+      final centers = <Point2f>[];  
+
     final grayMat = _convertToGrayscale(image);
-    final centers = <Point2f>[];
+
 
     try {
 

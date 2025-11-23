@@ -53,6 +53,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
 
   int _processingTime = 0;
   double _laserLevel = 0.5;
+  bool isLaserDetectAndSaveOn = false;
 
   @override
   void initState() {
@@ -73,14 +74,17 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
 
   void _startDetection() {
     /* ... */
+
+    isLaserDetectAndSaveOn = isLaserDetectAndSaveOn ? false : true;
   }
+
   void _openConfig() {
     /* ... */
   }
   void _setLaserLevel(double value) {
     setState(() {
       _laserLevel = value;
-      globalLowYLimit=value.toInt();
+      globalLowYLimit = value.toInt();
     });
   }
 
@@ -278,7 +282,7 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
           maxXLaserZone: maxXLaserZone,
           minYLaserZone: minYLaserZone,
           maxYLaserZone: maxYLaserZone,
-          lowYLimit:globalLowYLimit
+          lowYLimit: globalLowYLimit,
         ),
       );
       final centersLaser =
@@ -286,8 +290,11 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
               .map((data) => dartcv.Point2f(data[0], data[1]))
               .toList();
 
-      // List<List<double>> centersData = [];
-      final centersData = await compute(_processArucoInIsolate, image);
+      List<List<double>> centersData = [];
+      if (!isLaserDetectAndSaveOn) {
+        centersData = await compute(_processArucoInIsolate, image);
+      }
+
       // Конвертируем обратно в Point2f
       final centers =
           centersData.map((data) => dartcv.Point2f(data[0], data[1])).toList();
@@ -305,7 +312,8 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
           _detectedCenters = centers;
           _detectedLaserCenters = centersLaser;
           _processingTime =
-              stopwatch.elapsedMilliseconds; // сохраняем для отображения в UI
+              stopwatch
+                  .elapsedMilliseconds; // сохраняем для отображения в UI  '${(1000 / _processingTime).toStringAsFixed(1)}'
           print("$_detectedCenters");
         });
       }
@@ -706,6 +714,55 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
     );
   }
 
+  Widget _buildTextIndicator() {
+    return Container(
+      // margin: const EdgeInsets.symmetric(horizontal: 40),
+      // padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        // mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          Column(
+            children: [
+              Text(
+                _detectedLaserCenters.isNotEmpty
+                    ? "x: ${_detectedLaserCenters[0].x.toStringAsFixed(0)} y: ${_detectedLaserCenters[0].y.toStringAsFixed(0)}"
+                    : "____",
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+              ),
+              // Text(_detectedLaserCenters.isNotEmpty ? '1111111' : '222222'),
+              // Text(
+              //   'Количество: ${_detectedLaserCenters.length}',
+              //   style: const TextStyle(fontSize: 16),
+              // ),
+              Text(
+                'FPS',
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+              ),
+              Text(
+                '${(1000 / _processingTime).toStringAsFixed(1)}',
+                style: TextStyle(
+                  color: Colors.white, //_getTiltColor(),
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              // Text(
+              //   _getTiltDirection(_rollAngle),
+              //   style: TextStyle(color: _getTiltColor(), fontSize: 12),
+              // ),
+              Text("_______"),
+              // _detectedLaserCenters.isNotEmpty?Text("${_detectedLaserCenters[0].x.toStringAsFixed(0)}  ${_detectedLaserCenters[0].y.toStringAsFixed(0)}"):Text("____"),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Color _getTiltColor() {
     final absAngle = _rollAngle.abs();
     if (absAngle < 1.0) return Colors.green;
@@ -756,103 +813,111 @@ class _CameraBrightnessWidgetState extends State<CameraBrightnessWidget> {
     );
   }
 
-Widget _buildLandscapeLayout() {
-  return Stack(
-    children: [
-      Column(
-        children: [
-          Expanded(
-            child: Stack(
-              children: [
-                _buildCameraPreview(),
+  Widget _buildLandscapeLayout() {
+    return Stack(
+      children: [
+        Column(
+          children: [
+            Expanded(
+              child: Stack(
+                children: [
+                  _buildCameraPreview(),
 
-                Positioned(
-                  left: MediaQuery.of(context).size.width * 0.0,
-                  top: MediaQuery.of(context).size.height * 0.0,
-                  child: Container(
-                    width: MediaQuery.of(context).size.width * 1.0,
-                    height: MediaQuery.of(context).size.height * 1.0,
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: Colors.red.withOpacity(0.7),
-                        width: 3,
+                  Positioned(
+                    left: MediaQuery.of(context).size.width * 0.0,
+                    top: MediaQuery.of(context).size.height * 0.0,
+                    child: Container(
+                      width: MediaQuery.of(context).size.width * 1.0,
+                      height: MediaQuery.of(context).size.height * 1.0,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Colors.red.withOpacity(0.7),
+                          width: 3,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-
-      Align(
-        alignment: Alignment.centerRight,
-        // Оборачиваем правую панель и слайдер в Row
-        child: Row(
-          mainAxisSize: MainAxisSize.min, // Чтобы Row не занимал всю ширину
-          children: [
-            Container(
-              width: 150,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.2),
-                border: Border(left: BorderSide(color: Colors.grey.shade800)),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Кнопка Start
-                  ElevatedButton(
-                    onPressed: _startDetection, // Замените на ваш метод
-                    child: const Text('Start'),
-                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 40)),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // Кнопка Config
-                  ElevatedButton(
-                    onPressed: _openConfig, // Замените на ваш метод
-                    child: const Text('Config'),
-                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 40)),
-                  ),
-                  const SizedBox(height: 20),
-
-                  _buildLevelIndicator(),
                 ],
-              ),
-            ),
-
-            // Вертикальный ползунок (Slider) справа
-            Container(
-              width: 48, // Достаточно для слайдера
-              color: Colors.black.withOpacity(0.2), // Фон для слайдера
-              child: RotatedBox(
-                quarterTurns: 3, // Поворачиваем Slider на 270 градусов (вертикально сверху вниз)
-                child: Container(
-                  width: MediaQuery.of(context).size.height, // Слайдер занимает высоту экрана в повернутом состоянии
-                  height: 48, // Высота контейнера для повернутого слайдера
-                  child: Slider(
-                    value: _laserLevel, // Переменная состояния для уровня лазера
-                    min: 0,
-                    max: 255, // Обычный диапазон для значений яркости
-                    divisions: 255, // Плавная регулировка
-                    label: _laserLevel.round().toString(),
-                    onChanged: (double value) {
-                      _setLaserLevel(value); // Метод обновления состояния
-                    },
-                  ),
-                ),
               ),
             ),
           ],
         ),
-      ),
-    ],
-  );
-}
 
+        Align(
+          alignment: Alignment.centerRight,
+          // Оборачиваем правую панель и слайдер в Row
+          child: Row(
+            mainAxisSize: MainAxisSize.min, // Чтобы Row не занимал всю ширину
+            children: [
+              Container(
+                width: 150,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.2),
+                  border: Border(left: BorderSide(color: Colors.grey.shade800)),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Кнопка Start
+                    ElevatedButton(
+                      onPressed: _startDetection, // Замените на ваш метод
+                      child: Text(isLaserDetectAndSaveOn ? 'Stop' : 'Start'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 40),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
 
+                    // Кнопка Config
+                    ElevatedButton(
+                      onPressed: _openConfig, // Замените на ваш метод
+                      child: const Text('Config'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 40),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    _buildLevelIndicator(),
+                    _buildTextIndicator(),
+                  ],
+                ),
+              ),
+
+              // Вертикальный ползунок (Slider) справа
+              Container(
+                width: 48, // Достаточно для слайдера
+                color: Colors.black.withOpacity(0.2), // Фон для слайдера
+                child: RotatedBox(
+                  quarterTurns:
+                      3, // Поворачиваем Slider на 270 градусов (вертикально сверху вниз)
+                  child: Container(
+                    width:
+                        MediaQuery.of(context)
+                            .size
+                            .height, // Слайдер занимает высоту экрана в повернутом состоянии
+                    height: 48, // Высота контейнера для повернутого слайдера
+                    child: Slider(
+                      value:
+                          _laserLevel, // Переменная состояния для уровня лазера
+                      min: 0,
+                      max: 255, // Обычный диапазон для значений яркости
+                      divisions: 255, // Плавная регулировка
+                      label: _laserLevel.round().toString(),
+                      onChanged: (double value) {
+                        _setLaserLevel(value); // Метод обновления состояния
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
   // Widget _buildLandscapeLayout() {
   //   return
